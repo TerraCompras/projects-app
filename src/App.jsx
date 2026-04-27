@@ -32,7 +32,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 .topbar-title{font-size:12px;font-weight:600;letter-spacing:1px;color:var(--navy);text-transform:uppercase}
 .content{flex:1;overflow-y:auto;padding:24px 28px;background:var(--bg)}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:20px;margin-bottom:16px;box-shadow:0 1px 4px rgba(33,51,99,.06)}
-.card-title{font-size:10px;font-weight:600;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between}
 .badge{display:inline-flex;align-items:center;font-family:var(--mono);font-size:9px;font-weight:600;padding:3px 8px;border-radius:4px;white-space:nowrap;letter-spacing:.3px}
 .b-blue{background:#DBEAFE;color:#1E40AF;border:1px solid #BFDBFE}
 .b-green{background:#D1FAE5;color:#065F46;border:1px solid #A7F3D0}
@@ -120,6 +119,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 .tarea-row:hover{border-color:var(--blue)}
 .tarea-row.critica{border-left:3px solid var(--danger)}
 .tarea-row.atrasada{border-left:3px solid var(--warn)}
+.dia-btn{padding:5px 12px;border-radius:var(--r);font-size:11px;font-weight:600;cursor:pointer;user-select:none;transition:all .12s;border:1px solid var(--border)}
+.dia-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.dia-btn.inactive{background:var(--surface2);color:var(--muted)}
 `;
 
 const STATUS_PROYECTO = {
@@ -137,9 +139,24 @@ const STATUS_TAREA = {
   bloqueada: { label: "Bloqueada", color: "b-red" },
 };
 
+const DIAS_SEMANA = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+const DIAS_DEFAULT = [true, true, true, true, true, false, false];
+
 const fmtDate = d => d ? new Date(d + "T00:00:00").toLocaleDateString("es-AR") : "—";
 const diffDays = (a, b) => Math.ceil((new Date(b) - new Date(a)) / 86400000);
 const today = () => new Date().toISOString().split("T")[0];
+
+function calcFechaFin(inicio, duracion, diasHabiles) {
+  if (!inicio || !duracion || !diasHabiles?.some(d => d)) return "";
+  let cur = new Date(inicio + "T00:00:00");
+  let restante = parseInt(duracion);
+  while (restante > 0) {
+    const dow = (cur.getDay() + 6) % 7;
+    if (diasHabiles[dow]) restante--;
+    if (restante > 0) cur.setDate(cur.getDate() + 1);
+  }
+  return cur.toISOString().split("T")[0];
+}
 
 const api = {
   async getProyectos(filtros = {}) {
@@ -153,9 +170,7 @@ const api = {
   async crearProyecto(proy, recursos) {
     const { data, error } = await supabase.from("proyectos").insert([proy]).select().single();
     if (error) throw error;
-    if (recursos?.length) {
-      await supabase.from("proyecto_recursos").insert(recursos.map(r => ({ ...r, proyecto_id: data.id })));
-    }
+    if (recursos?.length) await supabase.from("proyecto_recursos").insert(recursos.map(r => ({ ...r, proyecto_id: data.id })));
     return data;
   },
   async actualizarProyecto(id, cambios) {
@@ -181,7 +196,7 @@ const api = {
 
 function calcularCaminoCritico(tareas) {
   if (!tareas?.length) return new Set();
-  const duracion = t => t.fecha_inicio && t.fecha_fin ? Math.max(diffDays(t.fecha_inicio, t.fecha_fin), 1) : (t.duracion_dias || 1);
+  const duracion = t => Math.max(parseInt(t.duracion_dias) || 1, 1);
   const earlyFinish = {};
   const sorted = [...tareas].sort((a, b) => (a.fecha_inicio || "") < (b.fecha_inicio || "") ? -1 : 1);
   sorted.forEach(t => {
@@ -232,11 +247,7 @@ function ProyectoModal({ proyecto, onClose, onSave }) {
     if (!form.nombre || !form.empresa) return alert("Completá nombre y empresa");
     setSaving(true);
     try {
-      if (proyecto) {
-        await api.actualizarProyecto(proyecto.id, form);
-      } else {
-        await api.crearProyecto(form, recursos.map(r => ({ nombre: r })));
-      }
+      proyecto ? await api.actualizarProyecto(proyecto.id, form) : await api.crearProyecto(form, recursos.map(r => ({ nombre: r })));
       onSave();
     } catch (e) { alert("Error: " + e.message); }
     finally { setSaving(false); }
@@ -258,52 +269,25 @@ function ProyectoModal({ proyecto, onClose, onSave }) {
         <div className="mbody">
           <div className="form-section">Datos generales</div>
           <div className="form-grid">
-            <FG label="Empresa *">
-              <select value={form.empresa} onChange={e => set("empresa", e.target.value)}>
-                {EMPRESAS.map(e => <option key={e}>{e}</option>)}
-              </select>
-            </FG>
-            <FG label="Tipo">
-              <select value={form.tipo} onChange={e => set("tipo", e.target.value)}>
-                <option value="interno">Interno</option>
-                <option value="externo">Externo</option>
-              </select>
-            </FG>
+            <FG label="Empresa *"><select value={form.empresa} onChange={e => set("empresa", e.target.value)}>{EMPRESAS.map(e => <option key={e}>{e}</option>)}</select></FG>
+            <FG label="Tipo"><select value={form.tipo} onChange={e => set("tipo", e.target.value)}><option value="interno">Interno</option><option value="externo">Externo</option></select></FG>
           </div>
           <div className="form-grid">
-            <FG label="Nombre *" full>
-              <input value={form.nombre} onChange={e => set("nombre", e.target.value)} placeholder="Ej: Varada Golondrina 2026" />
-            </FG>
+            <FG label="Nombre *" full><input value={form.nombre} onChange={e => set("nombre", e.target.value)} placeholder="Ej: Varada Golondrina 2026" /></FG>
           </div>
           <div className="form-grid">
-            <FG label="Cliente (opcional)">
-              <input value={form.cliente} onChange={e => set("cliente", e.target.value)} placeholder="Ej: Fugro" />
-            </FG>
-            <FG label="Responsable">
-              <input value={form.responsable} onChange={e => set("responsable", e.target.value)} />
-            </FG>
-            <FG label="Fecha inicio">
-              <input type="date" value={form.fecha_inicio} onChange={e => set("fecha_inicio", e.target.value)} />
-            </FG>
-            <FG label="Fecha fin estimada">
-              <input type="date" value={form.fecha_fin} onChange={e => set("fecha_fin", e.target.value)} />
-            </FG>
+            <FG label="Cliente (opcional)"><input value={form.cliente} onChange={e => set("cliente", e.target.value)} placeholder="Ej: Fugro" /></FG>
+            <FG label="Responsable"><input value={form.responsable} onChange={e => set("responsable", e.target.value)} /></FG>
+            <FG label="Fecha inicio"><input type="date" value={form.fecha_inicio} onChange={e => set("fecha_inicio", e.target.value)} /></FG>
+            <FG label="Fecha fin estimada"><input type="date" value={form.fecha_fin} onChange={e => set("fecha_fin", e.target.value)} /></FG>
           </div>
           <div className="form-grid">
-            <FG label="Status">
-              <select value={form.status} onChange={e => set("status", e.target.value)}>
-                {Object.entries(STATUS_PROYECTO).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-              </select>
-            </FG>
+            <FG label="Status"><select value={form.status} onChange={e => set("status", e.target.value)}>{Object.entries(STATUS_PROYECTO).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></FG>
           </div>
-          <FG label="Descripción" full>
-            <textarea value={form.descripcion} onChange={e => set("descripcion", e.target.value)} placeholder="Descripción del proyecto..." />
-          </FG>
+          <FG label="Descripción" full><textarea value={form.descripcion} onChange={e => set("descripcion", e.target.value)} placeholder="Descripción del proyecto..." /></FG>
           <div className="form-section">Recursos asignados</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-            {recursos.map((r, i) => (
-              <div key={i} className="recurso-tag">{r}<button onClick={() => setRecursos(recursos.filter((_, j) => j !== i))}>✕</button></div>
-            ))}
+            {recursos.map((r, i) => <div key={i} className="recurso-tag">{r}<button onClick={() => setRecursos(recursos.filter((_, j) => j !== i))}>✕</button></div>)}
           </div>
           <div className="flex-gap">
             <input value={nuevoRecurso} onChange={e => setNuevoRecurso(e.target.value)} onKeyDown={e => e.key === "Enter" && addRecurso()}
@@ -322,14 +306,27 @@ function ProyectoModal({ proyecto, onClose, onSave }) {
 }
 
 function TareaModal({ tarea, proyectoId, tareas, onClose, onSave }) {
+  const parseDias = (d) => Array.isArray(d) && d.length === 7 ? d : [...DIAS_DEFAULT];
   const [form, setForm] = useState({
     proyecto_id: proyectoId, nombre: "", responsable: "", fecha_inicio: "",
     fecha_fin: "", duracion_dias: 1, dependencias: [], porcentaje_avance: 0,
-    status: "pendiente", notas: "",
+    status: "pendiente", notas: "", dias_habiles: [...DIAS_DEFAULT],
     ...(tarea || {}),
+    dias_habiles: parseDias(tarea?.dias_habiles),
   });
   const [saving, setSaving] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    const fin = calcFechaFin(form.fecha_inicio, form.duracion_dias, form.dias_habiles);
+    if (fin) set("fecha_fin", fin);
+  }, [form.fecha_inicio, form.duracion_dias, JSON.stringify(form.dias_habiles)]);
+
+  const toggleDia = (i) => {
+    const dias = [...form.dias_habiles];
+    dias[i] = !dias[i];
+    set("dias_habiles", dias);
+  };
 
   const toggleDep = (id) => {
     const deps = form.dependencias || [];
@@ -338,6 +335,7 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave }) {
 
   const handleSave = async () => {
     if (!form.nombre) return alert("El nombre es obligatorio");
+    if (!form.dias_habiles.some(d => d)) return alert("Seleccioná al menos un día hábil");
     setSaving(true);
     try {
       tarea?.id ? await api.actualizarTarea(tarea.id, form) : await api.crearTarea(form);
@@ -345,6 +343,8 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave }) {
     } catch (e) { alert("Error: " + e.message); }
     finally { setSaving(false); }
   };
+
+  const otrasTareas = tareas.filter(t => t.id !== tarea?.id);
 
   return (
     <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -355,37 +355,28 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave }) {
         </div>
         <div className="mbody">
           <div className="form-grid">
-            <FG label="Nombre *" full>
-              <input value={form.nombre} onChange={e => set("nombre", e.target.value)} placeholder="Ej: Limpieza de casco" />
-            </FG>
-            <FG label="Responsable">
-              <input value={form.responsable} onChange={e => set("responsable", e.target.value)} />
-            </FG>
-            <FG label="Status">
-              <select value={form.status} onChange={e => set("status", e.target.value)}>
-                {Object.entries(STATUS_TAREA).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-              </select>
-            </FG>
-            <FG label="Fecha inicio">
-              <input type="date" value={form.fecha_inicio} onChange={e => set("fecha_inicio", e.target.value)} />
-            </FG>
-            <FG label="Fecha fin">
-              <input type="date" value={form.fecha_fin} onChange={e => set("fecha_fin", e.target.value)} />
-            </FG>
-            <FG label="Duración (días)">
-              <input type="number" min={1} value={form.duracion_dias} onChange={e => set("duracion_dias", parseInt(e.target.value) || 1)} />
-            </FG>
-            <FG label="% Avance">
-              <input type="number" min={0} max={100} value={form.porcentaje_avance} onChange={e => set("porcentaje_avance", parseInt(e.target.value) || 0)} />
-            </FG>
+            <FG label="Nombre *" full><input value={form.nombre} onChange={e => set("nombre", e.target.value)} placeholder="Ej: Limpieza de casco" /></FG>
+            <FG label="Responsable"><input value={form.responsable} onChange={e => set("responsable", e.target.value)} /></FG>
+            <FG label="Status"><select value={form.status} onChange={e => set("status", e.target.value)}>{Object.entries(STATUS_TAREA).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></FG>
+            <FG label="Fecha inicio *"><input type="date" value={form.fecha_inicio} onChange={e => set("fecha_inicio", e.target.value)} /></FG>
+            <FG label="Duración (días hábiles)"><input type="number" min={1} value={form.duracion_dias} onChange={e => set("duracion_dias", parseInt(e.target.value) || 1)} /></FG>
+            <FG label="Fecha fin (calculada)"><input value={form.fecha_fin ? fmtDate(form.fecha_fin) : "—"} readOnly style={{ background: "var(--surface2)", color: "var(--muted)", cursor: "not-allowed" }} /></FG>
+            <FG label="% Avance"><input type="number" min={0} max={100} value={form.porcentaje_avance} onChange={e => set("porcentaje_avance", parseInt(e.target.value) || 0)} /></FG>
           </div>
-          <FG label="Notas" full>
-            <textarea value={form.notas} onChange={e => set("notas", e.target.value)} placeholder="Observaciones..." />
-          </FG>
-          {tareas.filter(t => t.id !== tarea?.id).length > 0 && <>
+
+          <div className="form-section">Días hábiles</div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+            {DIAS_SEMANA.map((d, i) => (
+              <div key={d} onClick={() => toggleDia(i)} className={`dia-btn ${form.dias_habiles[i] ? "active" : "inactive"}`}>{d}</div>
+            ))}
+          </div>
+
+          <FG label="Notas" full><textarea value={form.notas} onChange={e => set("notas", e.target.value)} placeholder="Observaciones..." /></FG>
+
+          {otrasTareas.length > 0 && <>
             <div className="form-section">Dependencias</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {tareas.filter(t => t.id !== tarea?.id).map(t => (
+              {otrasTareas.map(t => (
                 <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, cursor: "pointer" }}>
                   <input type="checkbox" checked={(form.dependencias || []).includes(t.id)} onChange={() => toggleDep(t.id)} style={{ accentColor: "var(--blue)" }} />
                   <span>{t.nombre}</span>
@@ -535,7 +526,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
     }
   }
 
-  const cols = `160px ${meses.length > 0 ? `repeat(${meses.length}, 1fr)` : "1fr"}`;
+  const cols = `180px ${meses.length > 0 ? `repeat(${meses.length}, 1fr)` : "1fr"}`;
 
   return (
     <div>
@@ -597,11 +588,13 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                   <div key={t.id} className="gantt-row" style={{ gridTemplateColumns: cols }} onClick={() => setModalTarea(t)}>
                     <div className="gc-label">
                       <div className="gc-name">{t.nombre}{criticas.has(t.id) && <span className="cc-badge">CC</span>}</div>
-                      <div className="gc-sub">{t.responsable || "—"} · {t.porcentaje_avance || 0}%</div>
+                      <div className="gc-sub">{t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
                     </div>
                     <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}` }}>
-                      {barStyle && <div className={`bar ${getBarClass(t)}`} style={barStyle}>{t.nombre}</div>}
-                      {!barStyle && <div style={{ fontSize: 10, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>}
+                      {barStyle
+                        ? <div className={`bar ${getBarClass(t)}`} style={barStyle}>{t.nombre}</div>
+                        : <div style={{ fontSize: 10, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>
+                      }
                     </div>
                   </div>
                 );
@@ -635,6 +628,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                   <div className="req-meta">
                     {t.responsable && <span>{t.responsable}</span>}
                     {t.fecha_inicio && <><span>·</span><span>{fmtDate(t.fecha_inicio)} → {fmtDate(t.fecha_fin)}</span></>}
+                    <span>·</span><span>{t.duracion_dias} días hábiles</span>
                     {(t.dependencias || []).length > 0 && <><span>·</span><span>{t.dependencias.length} dep.</span></>}
                   </div>
                   <div className="mt8"><PctBar pct={t.porcentaje_avance || 0} critica={criticas.has(t.id)} /></div>
@@ -667,7 +661,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                     <div className="req-meta">
                       {t.responsable && <span>{t.responsable}</span>}
                       {t.fecha_inicio && <><span>·</span><span>{fmtDate(t.fecha_inicio)} → {fmtDate(t.fecha_fin)}</span></>}
-                      <span>·</span><span>{t.duracion_dias || (t.fecha_inicio && t.fecha_fin ? diffDays(t.fecha_inicio, t.fecha_fin) : "—")} días</span>
+                      <span>·</span><span>{t.duracion_dias} días hábiles</span>
                     </div>
                     <div className="mt8"><PctBar pct={t.porcentaje_avance || 0} critica /></div>
                   </div>
