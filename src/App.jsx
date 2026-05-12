@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "./lib/supabase";
 
+const PORTAL_URL = "https://erp-portal-fawn.vercel.app";
 const EMPRESAS = ["Parana Logistica", "Clean Sea", "Terra Mare"];
 const USUARIO = "Gerencia";
 
@@ -16,20 +17,26 @@ const CSS = `
 }
 body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5;min-height:100vh}
 .app{display:flex;min-height:100vh}
-.sidebar{width:235px;min-width:235px;background:var(--navy);display:flex;flex-direction:column;box-shadow:2px 0 8px rgba(33,51,99,.15)}
+
+/* ── SIDEBAR ── */
+.sidebar{width:235px;min-width:235px;background:var(--navy);display:flex;flex-direction:column;box-shadow:2px 0 8px rgba(33,51,99,.15);transition:transform .25s}
 .sidebar-header{border-bottom:1px solid rgba(255,255,255,.1)}
 .sidebar-logo-wrap{padding:20px 18px 16px;display:flex;align-items:center;gap:12px}
-.sidebar-logo{width:36px;height:36px;background:rgba(255,255,255,.15);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px}
+.sidebar-logo-img{width:36px;height:36px;object-fit:cover;border-radius:50%;border:2px solid rgba(255,255,255,.2)}
 .sidebar-logo-main{font-size:13px;font-weight:700;color:#fff;letter-spacing:2px;text-transform:uppercase}
 .sidebar-logo-sub{font-size:9px;color:rgba(255,255,255,.5);letter-spacing:.5px}
 .nav-section{padding:12px 18px 4px;font-family:var(--mono);font-size:9px;letter-spacing:2px;color:rgba(255,255,255,.35);text-transform:uppercase}
 .ni{display:flex;align-items:center;gap:9px;padding:7px 18px;font-size:12px;font-weight:500;cursor:pointer;color:rgba(255,255,255,.6);border-left:3px solid transparent;transition:all .12s;user-select:none}
 .ni:hover{color:#fff;background:rgba(255,255,255,.06)}
 .ni.active{color:#fff;border-left-color:var(--light);background:rgba(255,255,255,.1);font-weight:600}
+.ni.back{color:rgba(255,255,255,.4);font-size:11px;border-top:1px solid rgba(255,255,255,.08);margin-top:4px}
+.ni.back:hover{color:rgba(255,255,255,.8)}
 .ni-icon{font-size:13px;width:16px;text-align:center;flex-shrink:0}
+
+/* ── MAIN ── */
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
-.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:13px 28px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 1px 3px rgba(33,51,99,.06)}
-.topbar-title{font-size:12px;font-weight:600;letter-spacing:1px;color:var(--navy);text-transform:uppercase}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:13px 28px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 1px 3px rgba(33,51,99,.06);gap:12px}
+.topbar-title{font-size:12px;font-weight:600;letter-spacing:1px;color:var(--navy);text-transform:uppercase;white-space:nowrap}
 .content{flex:1;overflow-y:auto;padding:24px 28px;background:var(--bg)}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:20px;margin-bottom:16px;box-shadow:0 1px 4px rgba(33,51,99,.06)}
 .badge{display:inline-flex;align-items:center;font-family:var(--mono);font-size:9px;font-weight:600;padding:3px 8px;border-radius:4px;white-space:nowrap;letter-spacing:.3px}
@@ -42,6 +49,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 .b-teal{background:#D1FAE5;color:#065F46;border:1px solid #A7F3D0}
 .btn{display:inline-flex;align-items:center;gap:6px;font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.3px;padding:7px 14px;border-radius:var(--r);border:1px solid transparent;cursor:pointer;transition:all .15s;white-space:nowrap;text-transform:uppercase}
 .btn-primary{background:var(--blue);color:#fff}.btn-primary:hover{background:var(--navy)}
+.btn-danger{background:transparent;color:var(--danger);border-color:var(--danger)}.btn-danger:hover{background:#FEE2E2}
 .btn-ghost{background:transparent;color:var(--muted);border-color:var(--border)}.btn-ghost:hover{color:var(--text);background:var(--surface2)}
 .btn-sm{padding:4px 10px;font-size:10px}
 .btn:disabled{opacity:.4;cursor:not-allowed}
@@ -80,8 +88,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 .info-box{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;font-size:13px}
 .info-box.accent{border-left:3px solid var(--blue)}
 .info-box.danger{border-left:3px solid var(--danger);background:#FEF2F2}
-.flex-gap{display:flex;gap:8px;align-items:center}
-.flex-between{display:flex;justify-content:space-between;align-items:center}
+.flex-gap{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.flex-between{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .mt8{margin-top:8px}.mt12{margin-top:12px}.mt16{margin-top:16px}
 .mb8{margin-bottom:8px}.mb12{margin-bottom:12px}
 .text-mono{font-family:var(--mono)}.text-muted{color:var(--muted)}
@@ -122,29 +130,60 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 .dia-btn{padding:5px 12px;border-radius:var(--r);font-size:11px;font-weight:600;cursor:pointer;user-select:none;transition:all .12s;border:1px solid var(--border)}
 .dia-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
 .dia-btn.inactive{background:var(--surface2);color:var(--muted)}
+
+/* ── HAMBURGER (mobile) ── */
+.hamburger{display:none;background:none;border:none;cursor:pointer;padding:4px;flex-direction:column;gap:4px}
+.hamburger span{display:block;width:20px;height:2px;background:var(--navy);border-radius:2px;transition:all .2s}
+.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:49}
+
+/* ── RESPONSIVE ── */
+@media(max-width:768px){
+  .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:50;transform:translateX(-100%)}
+  .sidebar.open{transform:translateX(0)}
+  .sidebar-overlay.open{display:block}
+  .hamburger{display:flex}
+  .topbar{padding:10px 16px}
+  .content{padding:16px}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .form-grid{grid-template-columns:1fr}
+  .form-grid-3{grid-template-columns:1fr}
+  .gantt-wrap{overflow-x:auto}
+  .req-title{font-size:13px}
+  .modal{max-width:100%;margin:0;border-radius:12px 12px 0 0;position:fixed;bottom:0;left:0;right:0;max-height:90vh;overflow-y:auto}
+  .overlay{align-items:flex-end;padding:0}
+  .flex-between{flex-wrap:wrap}
+  .filter-row{gap:6px}
+  .filter-select{min-width:0;flex:1}
+}
+@media(max-width:480px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .stat-value{font-size:22px}
+  .btn{padding:6px 10px;font-size:10px}
+  .topbar-title{font-size:11px}
+}
 `;
 
 const STATUS_PROYECTO = {
   planificado: { label: "Planificado", color: "b-gray" },
-  en_curso: { label: "En curso", color: "b-blue" },
-  completado: { label: "Completado", color: "b-green" },
-  cancelado: { label: "Cancelado", color: "b-red" },
+  en_curso:    { label: "En curso",    color: "b-blue" },
+  completado:  { label: "Completado",  color: "b-green" },
+  cancelado:   { label: "Cancelado",   color: "b-red" },
 };
 
 const STATUS_TAREA = {
-  pendiente: { label: "Pendiente", color: "b-gray" },
-  en_curso: { label: "En curso", color: "b-blue" },
+  pendiente:  { label: "Pendiente",  color: "b-gray" },
+  en_curso:   { label: "En curso",   color: "b-blue" },
   completada: { label: "Completada", color: "b-green" },
-  atrasada: { label: "Atrasada", color: "b-amber" },
-  bloqueada: { label: "Bloqueada", color: "b-red" },
+  atrasada:   { label: "Atrasada",   color: "b-amber" },
+  bloqueada:  { label: "Bloqueada",  color: "b-red" },
 };
 
-const DIAS_SEMANA = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
+const DIAS_SEMANA  = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 const DIAS_DEFAULT = [true, true, true, true, true, false, false];
 
-const fmtDate = d => d ? new Date(d + "T00:00:00").toLocaleDateString("es-AR") : "—";
+const fmtDate  = d => d ? new Date(d + "T00:00:00").toLocaleDateString("es-AR") : "—";
 const diffDays = (a, b) => Math.ceil((new Date(b) - new Date(a)) / 86400000);
-const today = () => new Date().toISOString().split("T")[0];
+const today    = () => new Date().toISOString().split("T")[0];
 
 function calcFechaFin(inicio, duracion, diasHabiles) {
   if (!inicio || !duracion || !diasHabiles?.some(d => d)) return "";
@@ -158,11 +197,12 @@ function calcFechaFin(inicio, duracion, diasHabiles) {
   return cur.toISOString().split("T")[0];
 }
 
+// ─── API ─────────────────────────────────────────────────────────────────────
 const api = {
   async getProyectos(filtros = {}) {
     let q = supabase.from("proyectos").select("*, proyecto_recursos(*), proyecto_tareas(*)").order("created_at", { ascending: false });
     if (filtros.empresa) q = q.eq("empresa", filtros.empresa);
-    if (filtros.status) q = q.eq("status", filtros.status);
+    if (filtros.status)  q = q.eq("status",  filtros.status);
     const { data, error } = await q;
     if (error) throw error;
     return data || [];
@@ -170,13 +210,23 @@ const api = {
   async crearProyecto(proy, recursos) {
     const { data, error } = await supabase.from("proyectos").insert([proy]).select().single();
     if (error) throw error;
-    if (recursos?.length) await supabase.from("proyecto_recursos").insert(recursos.map(r => ({ ...r, proyecto_id: data.id })));
+    if (recursos?.length)
+      await supabase.from("proyecto_recursos").insert(recursos.map(r => ({ ...r, proyecto_id: data.id })));
     return data;
   },
   async actualizarProyecto(id, cambios) {
     const { data, error } = await supabase.from("proyectos").update({ ...cambios, updated_at: new Date().toISOString() }).eq("id", id).select().single();
     if (error) throw error;
     return data;
+  },
+  async eliminarProyecto(id) {
+    // Eliminar en cascada: tareas → recursos → proyecto
+    const { error: e1 } = await supabase.from("proyecto_tareas").delete().eq("proyecto_id", id);
+    if (e1) throw e1;
+    const { error: e2 } = await supabase.from("proyecto_recursos").delete().eq("proyecto_id", id);
+    if (e2) throw e2;
+    const { error: e3 } = await supabase.from("proyectos").delete().eq("id", id);
+    if (e3) throw e3;
   },
   async crearTarea(tarea) {
     const { data, error } = await supabase.from("proyecto_tareas").insert([tarea]).select().single();
@@ -194,6 +244,7 @@ const api = {
   },
 };
 
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
 function calcularCaminoCritico(tareas) {
   if (!tareas?.length) return new Set();
   const duracion = t => Math.max(parseInt(t.duracion_dias) || 1, 1);
@@ -232,6 +283,7 @@ function PctBar({ pct, critica }) {
   return <div className="pct-bar"><div className={`pct-fill ${critica ? "critical" : pct >= 100 ? "done" : ""}`} style={{ width: `${Math.min(pct, 100)}%` }} /></div>;
 }
 
+// ─── MODAL PROYECTO ───────────────────────────────────────────────────────────
 function ProyectoModal({ proyecto, onClose, onSave }) {
   const [form, setForm] = useState({
     empresa: "Parana Logistica", nombre: "", tipo: "interno", cliente: "",
@@ -247,7 +299,9 @@ function ProyectoModal({ proyecto, onClose, onSave }) {
     if (!form.nombre || !form.empresa) return alert("Completá nombre y empresa");
     setSaving(true);
     try {
-      proyecto ? await api.actualizarProyecto(proyecto.id, form) : await api.crearProyecto(form, recursos.map(r => ({ nombre: r })));
+      proyecto
+        ? await api.actualizarProyecto(proyecto.id, form)
+        : await api.crearProyecto(form, recursos.map(r => ({ nombre: r })));
       onSave();
     } catch (e) { alert("Error: " + e.message); }
     finally { setSaving(false); }
@@ -276,22 +330,22 @@ function ProyectoModal({ proyecto, onClose, onSave }) {
             <FG label="Nombre *" full><input value={form.nombre} onChange={e => set("nombre", e.target.value)} placeholder="Ej: Varada Golondrina 2026" /></FG>
           </div>
           <div className="form-grid">
-            <FG label="Cliente (opcional)"><input value={form.cliente} onChange={e => set("cliente", e.target.value)} placeholder="Ej: Fugro" /></FG>
-            <FG label="Responsable"><input value={form.responsable} onChange={e => set("responsable", e.target.value)} /></FG>
-            <FG label="Fecha inicio"><input type="date" value={form.fecha_inicio} onChange={e => set("fecha_inicio", e.target.value)} /></FG>
-            <FG label="Fecha fin estimada"><input type="date" value={form.fecha_fin} onChange={e => set("fecha_fin", e.target.value)} /></FG>
+            <FG label="Cliente (opcional)"><input value={form.cliente || ""} onChange={e => set("cliente", e.target.value)} placeholder="Ej: Fugro" /></FG>
+            <FG label="Responsable"><input value={form.responsable || ""} onChange={e => set("responsable", e.target.value)} /></FG>
+            <FG label="Fecha inicio"><input type="date" value={form.fecha_inicio || ""} onChange={e => set("fecha_inicio", e.target.value)} /></FG>
+            <FG label="Fecha fin estimada"><input type="date" value={form.fecha_fin || ""} onChange={e => set("fecha_fin", e.target.value)} /></FG>
           </div>
           <div className="form-grid">
             <FG label="Status"><select value={form.status} onChange={e => set("status", e.target.value)}>{Object.entries(STATUS_PROYECTO).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></FG>
           </div>
-          <FG label="Descripción" full><textarea value={form.descripcion} onChange={e => set("descripcion", e.target.value)} placeholder="Descripción del proyecto..." /></FG>
+          <FG label="Descripción" full><textarea value={form.descripcion || ""} onChange={e => set("descripcion", e.target.value)} placeholder="Descripción del proyecto..." /></FG>
           <div className="form-section">Recursos asignados</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
             {recursos.map((r, i) => <div key={i} className="recurso-tag">{r}<button onClick={() => setRecursos(recursos.filter((_, j) => j !== i))}>✕</button></div>)}
           </div>
           <div className="flex-gap">
             <input value={nuevoRecurso} onChange={e => setNuevoRecurso(e.target.value)} onKeyDown={e => e.key === "Enter" && addRecurso()}
-              placeholder="Ej: Atlantic Dama, Base Quequen..."
+              placeholder="Ej: Atlantic Dama, Base Quequén..."
               style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r)", padding: "7px 10px", fontSize: 12, fontFamily: "var(--sans)", outline: "none" }} />
             <button className="btn btn-ghost btn-sm" onClick={addRecurso}>+ Agregar</button>
           </div>
@@ -305,7 +359,8 @@ function ProyectoModal({ proyecto, onClose, onSave }) {
   );
 }
 
-function TareaModal({ tarea, proyectoId, tareas, onClose, onSave }) {
+// ─── MODAL TAREA ──────────────────────────────────────────────────────────────
+function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar }) {
   const parseDias = (d) => Array.isArray(d) && d.length === 7 ? d : [...DIAS_DEFAULT];
   const [form, setForm] = useState({
     proyecto_id: proyectoId, nombre: "", responsable: "", fecha_inicio: "",
@@ -315,6 +370,7 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave }) {
     dias_habiles: parseDias(tarea?.dias_habiles),
   });
   const [saving, setSaving] = useState(false);
+  const [confirmEliminar, setConfirmEliminar] = useState(false);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   useEffect(() => {
@@ -322,12 +378,7 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave }) {
     if (fin) set("fecha_fin", fin);
   }, [form.fecha_inicio, form.duracion_dias, JSON.stringify(form.dias_habiles)]);
 
-  const toggleDia = (i) => {
-    const dias = [...form.dias_habiles];
-    dias[i] = !dias[i];
-    set("dias_habiles", dias);
-  };
-
+  const toggleDia = (i) => { const dias = [...form.dias_habiles]; dias[i] = !dias[i]; set("dias_habiles", dias); };
   const toggleDep = (id) => {
     const deps = form.dependencias || [];
     set("dependencias", deps.includes(id) ? deps.filter(d => d !== id) : [...deps, id]);
@@ -356,23 +407,20 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave }) {
         <div className="mbody">
           <div className="form-grid">
             <FG label="Nombre *" full><input value={form.nombre} onChange={e => set("nombre", e.target.value)} placeholder="Ej: Limpieza de casco" /></FG>
-            <FG label="Responsable"><input value={form.responsable} onChange={e => set("responsable", e.target.value)} /></FG>
+            <FG label="Responsable"><input value={form.responsable || ""} onChange={e => set("responsable", e.target.value)} /></FG>
             <FG label="Status"><select value={form.status} onChange={e => set("status", e.target.value)}>{Object.entries(STATUS_TAREA).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></FG>
-            <FG label="Fecha inicio *"><input type="date" value={form.fecha_inicio} onChange={e => set("fecha_inicio", e.target.value)} /></FG>
+            <FG label="Fecha inicio *"><input type="date" value={form.fecha_inicio || ""} onChange={e => set("fecha_inicio", e.target.value)} /></FG>
             <FG label="Duración (días hábiles)"><input type="number" min={1} value={form.duracion_dias} onChange={e => set("duracion_dias", parseInt(e.target.value) || 1)} /></FG>
             <FG label="Fecha fin (calculada)"><input value={form.fecha_fin ? fmtDate(form.fecha_fin) : "—"} readOnly style={{ background: "var(--surface2)", color: "var(--muted)", cursor: "not-allowed" }} /></FG>
             <FG label="% Avance"><input type="number" min={0} max={100} value={form.porcentaje_avance} onChange={e => set("porcentaje_avance", parseInt(e.target.value) || 0)} /></FG>
           </div>
-
           <div className="form-section">Días hábiles</div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
             {DIAS_SEMANA.map((d, i) => (
               <div key={d} onClick={() => toggleDia(i)} className={`dia-btn ${form.dias_habiles[i] ? "active" : "inactive"}`}>{d}</div>
             ))}
           </div>
-
-          <FG label="Notas" full><textarea value={form.notas} onChange={e => set("notas", e.target.value)} placeholder="Observaciones..." /></FG>
-
+          <FG label="Notas" full><textarea value={form.notas || ""} onChange={e => set("notas", e.target.value)} placeholder="Observaciones..." /></FG>
           {otrasTareas.length > 0 && <>
             <div className="form-section">Dependencias</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -386,21 +434,38 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave }) {
             </div>
           </>}
         </div>
-        <div className="mftr">
-          <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? "Guardando..." : "Guardar tarea"}</button>
+        <div className="mftr" style={{ justifyContent: "space-between" }}>
+          <div>
+            {tarea?.id && !confirmEliminar && (
+              <button className="btn btn-danger btn-sm" onClick={() => setConfirmEliminar(true)}>✕ Eliminar tarea</button>
+            )}
+            {tarea?.id && confirmEliminar && (
+              <div className="flex-gap">
+                <span style={{ fontSize: 11, color: "var(--danger)" }}>¿Confirmar?</span>
+                <button className="btn btn-danger btn-sm" onClick={() => onEliminar(tarea.id)}>Sí, eliminar</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => setConfirmEliminar(false)}>No</button>
+              </div>
+            )}
+          </div>
+          <div className="flex-gap">
+            <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? "Guardando..." : "Guardar tarea"}</button>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
+// ─── PAGE PROYECTOS ───────────────────────────────────────────────────────────
 function PageProyectos({ onSelectProyecto, notify }) {
-  const [proyectos, setProyectos] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState(false);
+  const [proyectos, setProyectos]   = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [modal, setModal]           = useState(false);
   const [filtroEmpresa, setFiltroEmpresa] = useState("");
-  const [filtroStatus, setFiltroStatus] = useState("");
+  const [filtroStatus, setFiltroStatus]   = useState("");
+  const [eliminandoId, setEliminandoId]   = useState(null);
+  const [confirmId, setConfirmId]         = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -412,9 +477,25 @@ function PageProyectos({ onSelectProyecto, notify }) {
 
   const filtrados = proyectos.filter(p => {
     if (filtroEmpresa && p.empresa !== filtroEmpresa) return false;
-    if (filtroStatus && p.status !== filtroStatus) return false;
+    if (filtroStatus  && p.status  !== filtroStatus)  return false;
     return true;
   });
+
+  const handleEliminar = async (e, id) => {
+    e.stopPropagation();
+    if (confirmId !== id) { setConfirmId(id); return; }
+    setEliminandoId(id);
+    try {
+      await api.eliminarProyecto(id);
+      notify("Proyecto eliminado", "warn");
+      setConfirmId(null);
+      load();
+    } catch (err) {
+      notify("Error al eliminar: " + err.message, "error");
+    } finally {
+      setEliminandoId(null);
+    }
+  };
 
   return (
     <div>
@@ -437,46 +518,76 @@ function PageProyectos({ onSelectProyecto, notify }) {
         <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>{filtrados.length} proyectos</span>
         <button className="btn btn-primary btn-sm" onClick={() => setModal(true)}>+ Nuevo proyecto</button>
       </div>
-      {loading ? <div className="loading"><span className="spin">◌</span> Cargando...</div> :
-        filtrados.length === 0 ? <div className="empty-state"><div style={{ fontSize: 28, marginBottom: 8 }}>📋</div>Sin proyectos</div> :
-        filtrados.map(p => {
-          const s = STATUS_PROYECTO[p.status] || { label: p.status, color: "b-gray" };
-          const tareas = p.proyecto_tareas || [];
-          const pct = tareas.length ? Math.round(tareas.reduce((a, t) => a + (t.porcentaje_avance || 0), 0) / tareas.length) : 0;
-          const atrasada = p.status === "en_curso" && p.fecha_fin && p.fecha_fin < today();
-          return (
-            <div key={p.id} className={`req-row ${atrasada ? "active-border" : ""}`} onClick={() => onSelectProyecto(p)}>
-              <div className="flex-between mb8">
-                <div className="flex-gap">
-                  <span className={`badge ${s.color}`}>{s.label}</span>
-                  <span className={`badge ${p.tipo === "externo" ? "b-purple" : "b-teal"}`}>{p.tipo}</span>
-                  {atrasada && <span className="badge b-red">⚠ Atrasado</span>}
+
+      {loading
+        ? <div className="loading"><span className="spin">◌</span> Cargando...</div>
+        : filtrados.length === 0
+          ? <div className="empty-state"><div style={{ fontSize: 28, marginBottom: 8 }}>📋</div>Sin proyectos</div>
+          : filtrados.map(p => {
+              const s      = STATUS_PROYECTO[p.status] || { label: p.status, color: "b-gray" };
+              const tareas = p.proyecto_tareas || [];
+              const pct    = tareas.length ? Math.round(tareas.reduce((a, t) => a + (t.porcentaje_avance || 0), 0) / tareas.length) : 0;
+              const atrasada = p.status === "en_curso" && p.fecha_fin && p.fecha_fin < today();
+              const esConfirm = confirmId === p.id;
+              return (
+                <div key={p.id} className={`req-row ${atrasada ? "active-border" : ""}`}
+                  onClick={() => { if (confirmId === p.id) { setConfirmId(null); return; } onSelectProyecto(p); }}
+                  style={{ position: "relative" }}>
+                  <div className="flex-between mb8">
+                    <div className="flex-gap">
+                      <span className={`badge ${s.color}`}>{s.label}</span>
+                      <span className={`badge ${p.tipo === "externo" ? "b-purple" : "b-teal"}`}>{p.tipo}</span>
+                      {atrasada && <span className="badge b-red">⚠ Atrasado</span>}
+                    </div>
+                    <div className="flex-gap">
+                      <span style={{ fontSize: 10, color: "var(--muted)" }}>{p.empresa}</span>
+                      {/* Botón eliminar */}
+                      {!esConfirm ? (
+                        <button
+                          onClick={e => handleEliminar(e, p.id)}
+                          disabled={eliminandoId === p.id}
+                          title="Eliminar proyecto"
+                          style={{ background: "none", border: "1px solid var(--border)", borderRadius: "var(--r)", color: "var(--muted2)", cursor: "pointer", fontSize: 10, padding: "2px 8px", fontFamily: "var(--sans)", fontWeight: 600, transition: "all .12s" }}
+                          onMouseEnter={e => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "var(--danger)"; }}
+                          onMouseLeave={e => { e.currentTarget.style.color = "var(--muted2)"; e.currentTarget.style.borderColor = "var(--border)"; }}
+                        >
+                          {eliminandoId === p.id ? "..." : "✕"}
+                        </button>
+                      ) : (
+                        <div className="flex-gap" onClick={e => e.stopPropagation()}>
+                          <span style={{ fontSize: 10, color: "var(--danger)", fontWeight: 600 }}>¿Eliminar?</span>
+                          <button className="btn btn-danger btn-sm" onClick={e => handleEliminar(e, p.id)} disabled={eliminandoId === p.id}>
+                            {eliminandoId === p.id ? "..." : "Sí"}
+                          </button>
+                          <button className="btn btn-ghost btn-sm" onClick={e => { e.stopPropagation(); setConfirmId(null); }}>No</button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="req-title">{p.nombre}</div>
+                  <div className="req-meta">
+                    {p.cliente    && <span>👤 {p.cliente}</span>}
+                    {p.responsable && <><span>·</span><span>{p.responsable}</span></>}
+                    {p.fecha_inicio && <><span>·</span><span>{fmtDate(p.fecha_inicio)} → {fmtDate(p.fecha_fin)}</span></>}
+                    <span>·</span><span>{tareas.length} tareas</span>
+                    {(p.proyecto_recursos || []).length > 0 && <><span>·</span><span>{(p.proyecto_recursos || []).map(r => r.nombre).join(", ")}</span></>}
+                  </div>
+                  {tareas.length > 0 && <div className="mt8"><PctBar pct={pct} /><div style={{ fontSize: 9, color: "var(--muted)", fontFamily: "var(--mono)", marginTop: 3 }}>{pct}% avance global</div></div>}
                 </div>
-                <span style={{ fontSize: 10, color: "var(--muted)" }}>{p.empresa}</span>
-              </div>
-              <div className="req-title">{p.nombre}</div>
-              <div className="req-meta">
-                {p.cliente && <span>👤 {p.cliente}</span>}
-                {p.responsable && <><span>·</span><span>{p.responsable}</span></>}
-                {p.fecha_inicio && <><span>·</span><span>{fmtDate(p.fecha_inicio)} → {fmtDate(p.fecha_fin)}</span></>}
-                <span>·</span><span>{tareas.length} tareas</span>
-                {(p.proyecto_recursos || []).length > 0 && <><span>·</span><span>{(p.proyecto_recursos || []).map(r => r.nombre).join(", ")}</span></>}
-              </div>
-              {tareas.length > 0 && <div className="mt8"><PctBar pct={pct} /><div style={{ fontSize: 9, color: "var(--muted)", fontFamily: "var(--mono)", marginTop: 3 }}>{pct}% avance global</div></div>}
-            </div>
-          );
-        })
+              );
+            })
       }
       {modal && <ProyectoModal onClose={() => setModal(false)} onSave={() => { setModal(false); notify("Proyecto creado", "success"); load(); }} />}
     </div>
   );
 }
 
+// ─── PAGE DETALLE ─────────────────────────────────────────────────────────────
 function PageDetalle({ proyectoId, onBack, notify }) {
-  const [proyecto, setProyecto] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState("gantt");
-  const [modalTarea, setModalTarea] = useState(null);
+  const [proyecto, setProyecto]       = useState(null);
+  const [loading, setLoading]         = useState(true);
+  const [tab, setTab]                 = useState("gantt");
+  const [modalTarea, setModalTarea]   = useState(null);
   const [editProyecto, setEditProyecto] = useState(false);
 
   const load = useCallback(async () => {
@@ -492,26 +603,26 @@ function PageDetalle({ proyectoId, onBack, notify }) {
   if (loading) return <div className="loading"><span className="spin">◌</span> Cargando...</div>;
   if (!proyecto) return <div className="empty-state">Proyecto no encontrado</div>;
 
-  const tareas = proyecto.proyecto_tareas || [];
+  const tareas   = proyecto.proyecto_tareas || [];
   const criticas = calcularCaminoCritico(tareas);
-  const pct = tareas.length ? Math.round(tareas.reduce((a, t) => a + (t.porcentaje_avance || 0), 0) / tareas.length) : 0;
+  const pct      = tareas.length ? Math.round(tareas.reduce((a, t) => a + (t.porcentaje_avance || 0), 0) / tareas.length) : 0;
   const atrasadas = tareas.filter(t => t.fecha_fin && t.fecha_fin < today() && t.porcentaje_avance < 100);
 
-  const fechas = tareas.filter(t => t.fecha_inicio && t.fecha_fin);
+  const fechas   = tareas.filter(t => t.fecha_inicio && t.fecha_fin);
   const minFecha = fechas.length ? fechas.reduce((a, t) => t.fecha_inicio < a ? t.fecha_inicio : a, fechas[0].fecha_inicio) : proyecto.fecha_inicio;
-  const maxFecha = fechas.length ? fechas.reduce((a, t) => t.fecha_fin > a ? t.fecha_fin : a, fechas[0].fecha_fin) : proyecto.fecha_fin;
+  const maxFecha = fechas.length ? fechas.reduce((a, t) => t.fecha_fin   > a ? t.fecha_fin   : a, fechas[0].fecha_fin)   : proyecto.fecha_fin;
   const totalDias = minFecha && maxFecha ? Math.max(diffDays(minFecha, maxFecha), 1) : 90;
 
   const getBarStyle = (t) => {
     if (!t.fecha_inicio || !t.fecha_fin || !minFecha) return null;
-    const left = (diffDays(minFecha, t.fecha_inicio) / totalDias) * 100;
+    const left  = (diffDays(minFecha, t.fecha_inicio) / totalDias) * 100;
     const width = Math.max((diffDays(t.fecha_inicio, t.fecha_fin) / totalDias) * 100, 2);
     return { left: `${left}%`, width: `${width}%` };
   };
 
   const getBarClass = (t) => {
     if (t.porcentaje_avance >= 100) return "done";
-    if (criticas.has(t.id)) return "critical";
+    if (criticas.has(t.id))         return "critical";
     if (t.fecha_fin && t.fecha_fin < today()) return "late";
     return "normal";
   };
@@ -527,6 +638,15 @@ function PageDetalle({ proyectoId, onBack, notify }) {
   }
 
   const cols = `180px ${meses.length > 0 ? `repeat(${meses.length}, 1fr)` : "1fr"}`;
+
+  const handleEliminarTarea = async (id) => {
+    try {
+      await api.eliminarTarea(id);
+      setModalTarea(null);
+      notify("Tarea eliminada", "warn");
+      load();
+    } catch (e) { notify("Error: " + e.message, "error"); }
+  };
 
   return (
     <div>
@@ -544,11 +664,11 @@ function PageDetalle({ proyectoId, onBack, notify }) {
               <span className={`badge ${STATUS_PROYECTO[proyecto.status]?.color || "b-gray"}`}>{STATUS_PROYECTO[proyecto.status]?.label}</span>
               <span className={`badge ${proyecto.tipo === "externo" ? "b-purple" : "b-teal"}`}>{proyecto.tipo}</span>
               <span style={{ fontSize: 11, color: "var(--muted)" }}>{proyecto.empresa}</span>
-              {proyecto.cliente && <span style={{ fontSize: 11, color: "var(--muted)" }}>· {proyecto.cliente}</span>}
+              {proyecto.cliente    && <span style={{ fontSize: 11, color: "var(--muted)" }}>· {proyecto.cliente}</span>}
               {proyecto.responsable && <span style={{ fontSize: 11, color: "var(--muted)" }}>· {proyecto.responsable}</span>}
             </div>
           </div>
-          <div style={{ textAlign: "right" }}>
+          <div style={{ textAlign: "right", flexShrink: 0 }}>
             <div style={{ fontFamily: "var(--mono)", fontSize: 24, fontWeight: 600, color: "var(--blue)" }}>{pct}%</div>
             <div style={{ fontSize: 10, color: "var(--muted)" }}>avance global</div>
           </div>
@@ -574,7 +694,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
       </div>
 
       {tab === "gantt" && (
-        <div className="gantt-wrap">
+        <div className="gantt-wrap" style={{ overflowX: "auto" }}>
           <div className="gantt-header" style={{ gridTemplateColumns: cols }}>
             <div className="gh-cell" style={{ textAlign: "left", borderRight: "1px solid var(--border)" }}>Tarea</div>
             {meses.map((m, i) => <div key={i} className="gh-cell">{m}</div>)}
@@ -600,7 +720,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                 );
               })
           }
-          <div style={{ padding: "10px 16px", display: "flex", gap: 14, borderTop: "1px solid var(--border)", background: "var(--surface2)" }}>
+          <div style={{ padding: "10px 16px", display: "flex", gap: 14, borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap" }}>
             {[["var(--danger)", "Camino crítico"], ["var(--blue)", "En fecha"], ["var(--accent2)", "Completada"], ["var(--warn)", "Atrasada"]].map(([color, label]) => (
               <div key={label} className="flex-gap"><div style={{ width: 10, height: 10, borderRadius: 2, background: color }} /><span style={{ fontSize: 9, color: "var(--muted)" }}>{label}</span></div>
             ))}
@@ -678,6 +798,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
           tareas={tareas}
           onClose={() => setModalTarea(null)}
           onSave={() => { setModalTarea(null); notify("Tarea guardada", "success"); load(); }}
+          onEliminar={handleEliminarTarea}
         />
       )}
       {editProyecto && (
@@ -691,23 +812,18 @@ function PageDetalle({ proyectoId, onBack, notify }) {
   );
 }
 
+// ─── ROOT APP ─────────────────────────────────────────────────────────────────
 export default function App() {
-  const [page, setPage] = useState("proyectos");
-  const [proyectoSeleccionado, setProyectoSeleccionado] = useState(null);
-  const [notif, setNotif] = useState(null);
-  const [filtroSidebar, setFiltroSidebar] = useState("");
+  const [page, setPage]                         = useState("proyectos");
+  const [proyectoSeleccionado, setProyecto]     = useState(null);
+  const [notif, setNotif]                       = useState(null);
+  const [filtroSidebar, setFiltroSidebar]       = useState("");
+  const [sidebarOpen, setSidebarOpen]           = useState(false);
 
   const notify = useCallback((text, type = "info") => {
     setNotif({ text, type });
     setTimeout(() => setNotif(null), 4000);
   }, []);
-
-  const NI = ({ id, icon, label }) => (
-    <div className={`ni ${page === id ? "active" : ""}`} onClick={() => setPage(id)}>
-      <span className="ni-icon">{icon}</span>
-      <span>{label}</span>
-    </div>
-  );
 
   const pageTitles = {
     proyectos: "Todos los proyectos",
@@ -715,14 +831,24 @@ export default function App() {
     detalle: proyectoSeleccionado?.nombre || "Proyecto",
   };
 
+  const NI = ({ id, icon, label }) => (
+    <div className={`ni ${page === id ? "active" : ""}`} onClick={() => { setPage(id); setSidebarOpen(false); }}>
+      <span className="ni-icon">{icon}</span>
+      <span>{label}</span>
+    </div>
+  );
+
   return (
     <>
       <style>{CSS}</style>
       <div className="app">
-        <nav className="sidebar">
+        {/* Overlay mobile */}
+        <div className={`sidebar-overlay ${sidebarOpen ? "open" : ""}`} onClick={() => setSidebarOpen(false)} />
+
+        <nav className={`sidebar ${sidebarOpen ? "open" : ""}`}>
           <div className="sidebar-header">
             <div className="sidebar-logo-wrap">
-              <div className="sidebar-logo">📋</div>
+              <img src="/PL.png" alt="Parana Logística" className="sidebar-logo-img" onError={e => { e.currentTarget.style.display = "none"; }} />
               <div>
                 <div className="sidebar-logo-main">Projects</div>
                 <div className="sidebar-logo-sub">Terra Mare Group</div>
@@ -734,19 +860,28 @@ export default function App() {
           <NI id="atrasados" icon="⚠" label="Atrasados" />
           <div className="nav-section">Empresas</div>
           {EMPRESAS.map(e => (
-            <div key={e} className={`ni ${filtroSidebar === e ? "active" : ""}`}
-              onClick={() => { setFiltroSidebar(filtroSidebar === e ? "" : e); setPage("proyectos"); }}>
+            <div key={e}
+              className={`ni ${filtroSidebar === e ? "active" : ""}`}
+              onClick={() => { setFiltroSidebar(filtroSidebar === e ? "" : e); setPage("proyectos"); setSidebarOpen(false); }}>
               <span className="ni-icon">·</span>
               <span style={{ fontSize: 11 }}>{e}</span>
             </div>
           ))}
           <div style={{ flex: 1 }} />
           <div style={{ padding: "14px 18px", borderTop: "1px solid rgba(255,255,255,.1)" }}>
-            <div style={{ fontSize: 9, color: "rgba(255,255,255,.3)", fontFamily: "var(--mono)", letterSpacing: 1 }}>PROJECTS v1.0</div>
+            <div className="ni back" onClick={() => window.open(PORTAL_URL, "_self")}>
+              <span className="ni-icon">←</span><span>Volver al portal</span>
+            </div>
+            <div style={{ fontSize: 9, color: "rgba(255,255,255,.3)", fontFamily: "var(--mono)", letterSpacing: 1, marginTop: 8 }}>PROJECTS v1.1</div>
           </div>
         </nav>
+
         <div className="main">
           <div className="topbar">
+            {/* Hamburger mobile */}
+            <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label="Menú">
+              <span /><span /><span />
+            </button>
             <div className="topbar-title">{pageTitles[page] || page}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#DBEAFE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--blue)", fontWeight: 700 }}>G</div>
@@ -756,7 +891,7 @@ export default function App() {
           <div className="content">
             {(page === "proyectos" || page === "atrasados") && (
               <PageProyectos
-                onSelectProyecto={p => { setProyectoSeleccionado(p); setPage("detalle"); }}
+                onSelectProyecto={p => { setProyecto(p); setPage("detalle"); }}
                 notify={notify}
               />
             )}
