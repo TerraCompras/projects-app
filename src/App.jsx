@@ -313,10 +313,28 @@ const api = {
     return data;
   },
   async eliminarAdjunto(id, url) {
-    // Extraer path del storage desde la URL
     const path = url.split("/proyecto-adjuntos/")[1];
     if (path) await supabase.storage.from("proyecto-adjuntos").remove([path]);
     const { error } = await supabase.from("proyecto_adjuntos").delete().eq("id", id);
+    if (error) throw error;
+  },
+  async getSubtareas(tareaId) {
+    const { data, error } = await supabase.from("proyecto_subtareas").select("*").eq("tarea_id", tareaId).order("fecha_inicio", { ascending: true });
+    if (error) throw error;
+    return data || [];
+  },
+  async crearSubtarea(subtarea) {
+    const { data, error } = await supabase.from("proyecto_subtareas").insert([subtarea]).select().single();
+    if (error) throw error;
+    return data;
+  },
+  async actualizarSubtarea(id, cambios) {
+    const { data, error } = await supabase.from("proyecto_subtareas").update(cambios).eq("id", id).select().single();
+    if (error) throw error;
+    return data;
+  },
+  async eliminarSubtarea(id) {
+    const { error } = await supabase.from("proyecto_subtareas").delete().eq("id", id);
     if (error) throw error;
   },
 };
@@ -568,15 +586,28 @@ function ProyectoModal({ proyecto, onClose, onSave }) {
 function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar }) {
   const parseDias = (d) => Array.isArray(d) && d.length === 7 ? d : [...DIAS_DEFAULT];
   const [form, setForm] = useState({
-    proyecto_id: proyectoId, nombre: "", responsable: "", fecha_inicio: "",
-    fecha_fin: "", duracion_dias: 1, dependencias: [], porcentaje_avance: 0,
-    status: "pendiente", notas: "", dias_habiles: [...DIAS_DEFAULT],
+    proyecto_id: proyectoId, nombre: "", owner: "", responsable: "",
+    fecha_inicio: "", fecha_fin: "", duracion_dias: 1, dependencias: [],
+    porcentaje_avance: 0, status: "pendiente", notas: "", dias_habiles: [...DIAS_DEFAULT],
     ...(tarea || {}),
     dias_habiles: parseDias(tarea?.dias_habiles),
   });
-  const [saving, setSaving] = useState(false);
+  const [perfiles, setPerfiles]         = useState([]);
+  const [subtareas, setSubtareas]       = useState([]);
+  const [saving, setSaving]             = useState(false);
+  const [savingSubtarea, setSavingSubtarea] = useState(false);
   const [confirmEliminar, setConfirmEliminar] = useState(false);
+  const [tabModal, setTabModal]         = useState("datos");
+  const [editSubtareaId, setEditSubtareaId] = useState(null);
+  const [subForm, setSubForm]           = useState({ descripcion: "", fecha_inicio: "", fecha_fin: "", porcentaje_avance: 0, responsable: "" });
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const setSub = (k, v) => setSubForm(f => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    api.getPerfiles().then(setPerfiles);
+    if (tarea?.id) api.getSubtareas(tarea.id).then(setSubtareas);
+  }, [tarea?.id]);
 
   useEffect(() => {
     const fin = calcFechaFin(form.fecha_inicio, form.duracion_dias, form.dias_habiles);
@@ -600,7 +631,45 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar }) 
     finally { setSaving(false); }
   };
 
+  // ── Subtareas ──
+  const blankSubForm = () => ({ descripcion: "", fecha_inicio: form.fecha_inicio || "", fecha_fin: form.fecha_fin || "", porcentaje_avance: 0, responsable: "" });
+
+  const handleGuardarSubtarea = async () => {
+    if (!subForm.descripcion.trim()) return alert("La descripción es obligatoria");
+    // Validar que fechas estén dentro de la tarea madre
+    if (form.fecha_inicio && subForm.fecha_inicio && subForm.fecha_inicio < form.fecha_inicio)
+      return alert(`La fecha de inicio no puede ser anterior a la tarea madre (${fmtDate(form.fecha_inicio)})`);
+    if (form.fecha_fin && subForm.fecha_fin && subForm.fecha_fin > form.fecha_fin)
+      return alert(`La fecha de fin no puede ser posterior a la tarea madre (${fmtDate(form.fecha_fin)})`);
+    setSavingSubtarea(true);
+    try {
+      if (editSubtareaId) {
+        const updated = await api.actualizarSubtarea(editSubtareaId, subForm);
+        setSubtareas(prev => prev.map(s => s.id === editSubtareaId ? updated : s));
+      } else {
+        const nueva = await api.crearSubtarea({ ...subForm, tarea_id: tarea.id, proyecto_id: proyectoId });
+        setSubtareas(prev => [...prev, nueva]);
+      }
+      setSubForm(blankSubForm());
+      setEditSubtareaId(null);
+    } catch (e) { alert("Error: " + e.message); }
+    finally { setSavingSubtarea(false); }
+  };
+
+  const handleEditarSubtarea = (s) => {
+    setEditSubtareaId(s.id);
+    setSubForm({ descripcion: s.descripcion, fecha_inicio: s.fecha_inicio || "", fecha_fin: s.fecha_fin || "", porcentaje_avance: s.porcentaje_avance || 0, responsable: s.responsable || "" });
+  };
+
+  const handleEliminarSubtarea = async (id) => {
+    if (!window.confirm("¿Eliminar esta subtarea?")) return;
+    await api.eliminarSubtarea(id);
+    setSubtareas(prev => prev.filter(s => s.id !== id));
+  };
+
   const otrasTareas = tareas.filter(t => t.id !== tarea?.id);
+
+  const inStyle = { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r)", color: "var(--text)", fontFamily: "var(--sans)", fontSize: 12, padding: "6px 10px", outline: "none", width: "100%" };
 
   return (
     <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -609,40 +678,157 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar }) 
           <div className="mtitle">{tarea?.id ? "Editar tarea" : "Nueva tarea"}</div>
           <button className="mclose" onClick={onClose}>✕</button>
         </div>
+
+        {/* Tabs del modal */}
+        <div style={{ display: "flex", borderBottom: "1px solid var(--border)", background: "var(--surface2)" }}>
+          {[
+            { id: "datos", label: "Datos" },
+            { id: "subtareas", label: `Subtareas${subtareas.length ? ` (${subtareas.length})` : ""}` },
+            { id: "adjuntos", label: "📎 Adjuntos" },
+          ].map(t => (
+            <div key={t.id}
+              onClick={() => setTabModal(t.id)}
+              style={{ padding: "9px 16px", fontSize: 11, fontWeight: 600, cursor: "pointer", letterSpacing: .5, textTransform: "uppercase", color: tabModal === t.id ? "var(--blue)" : "var(--muted)", borderBottom: `2px solid ${tabModal === t.id ? "var(--blue)" : "transparent"}`, transition: "all .12s" }}
+            >{t.label}</div>
+          ))}
+        </div>
+
         <div className="mbody">
-          <div className="form-grid">
-            <FG label="Nombre *" full><input value={form.nombre} onChange={e => set("nombre", e.target.value)} placeholder="Ej: Limpieza de casco" /></FG>
-            <FG label="Responsable"><input value={form.responsable || ""} onChange={e => set("responsable", e.target.value)} /></FG>
-            <FG label="Status"><select value={form.status} onChange={e => set("status", e.target.value)}>{Object.entries(STATUS_TAREA).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></FG>
-            <FG label="Fecha inicio *"><input type="date" value={form.fecha_inicio || ""} onChange={e => set("fecha_inicio", e.target.value)} /></FG>
-            <FG label="Duración (días hábiles)"><input type="number" min={1} value={form.duracion_dias} onChange={e => set("duracion_dias", parseInt(e.target.value) || 1)} /></FG>
-            <FG label="Fecha fin (calculada)"><input value={form.fecha_fin ? fmtDate(form.fecha_fin) : "—"} readOnly style={{ background: "var(--surface2)", color: "var(--muted)", cursor: "not-allowed" }} /></FG>
-            <FG label="% Avance"><input type="number" min={0} max={100} value={form.porcentaje_avance} onChange={e => set("porcentaje_avance", parseInt(e.target.value) || 0)} /></FG>
-          </div>
-          <div className="form-section">Días hábiles</div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-            {DIAS_SEMANA.map((d, i) => (
-              <div key={d} onClick={() => toggleDia(i)} className={`dia-btn ${form.dias_habiles[i] ? "active" : "inactive"}`}>{d}</div>
-            ))}
-          </div>
-          <FG label="Notas" full><textarea value={form.notas || ""} onChange={e => set("notas", e.target.value)} placeholder="Observaciones..." /></FG>
-          {tarea?.id && <>
-            <div className="form-section">Adjuntos</div>
-            <AdjuntosPanel proyectoId={proyectoId} tareaId={tarea.id} notify={() => {}} />
-          </>}
-          {otrasTareas.length > 0 && <>
-            <div className="form-section">Dependencias</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {otrasTareas.map(t => (
-                <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, cursor: "pointer" }}>
-                  <input type="checkbox" checked={(form.dependencias || []).includes(t.id)} onChange={() => toggleDep(t.id)} style={{ accentColor: "var(--blue)" }} />
-                  <span>{t.nombre}</span>
-                  {t.fecha_fin && <span style={{ fontSize: 10, color: "var(--muted)" }}>hasta {fmtDate(t.fecha_fin)}</span>}
-                </label>
+
+          {/* ── TAB DATOS ── */}
+          {tabModal === "datos" && <>
+            <div className="form-grid">
+              <FG label="Nombre *" full><input value={form.nombre} onChange={e => set("nombre", e.target.value)} placeholder="Ej: Limpieza de casco" /></FG>
+              <FG label="Owner (responsable final)">
+                <select value={form.owner || ""} onChange={e => set("owner", e.target.value)}>
+                  <option value="">Sin asignar</option>
+                  {perfiles.map(p => <option key={p.id} value={p.nombre}>{p.nombre}</option>)}
+                </select>
+              </FG>
+              <FG label="Responsable de ejecución">
+                <select value={form.responsable || ""} onChange={e => set("responsable", e.target.value)}>
+                  <option value="">Sin asignar</option>
+                  {perfiles.map(p => <option key={p.id} value={p.nombre}>{p.nombre}</option>)}
+                </select>
+              </FG>
+              <FG label="Status">
+                <select value={form.status} onChange={e => set("status", e.target.value)}>
+                  {Object.entries(STATUS_TAREA).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
+              </FG>
+              <FG label="Fecha inicio *"><input type="date" value={form.fecha_inicio || ""} onChange={e => set("fecha_inicio", e.target.value)} /></FG>
+              <FG label="Duración (días hábiles)"><input type="number" min={1} value={form.duracion_dias} onChange={e => set("duracion_dias", parseInt(e.target.value) || 1)} /></FG>
+              <FG label="Fecha fin (calculada)"><input value={form.fecha_fin ? fmtDate(form.fecha_fin) : "—"} readOnly style={{ background: "var(--surface2)", color: "var(--muted)", cursor: "not-allowed" }} /></FG>
+              <FG label="% Avance"><input type="number" min={0} max={100} value={form.porcentaje_avance} onChange={e => set("porcentaje_avance", parseInt(e.target.value) || 0)} /></FG>
+            </div>
+            <div className="form-section">Días hábiles</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+              {DIAS_SEMANA.map((d, i) => (
+                <div key={d} onClick={() => toggleDia(i)} className={`dia-btn ${form.dias_habiles[i] ? "active" : "inactive"}`}>{d}</div>
               ))}
             </div>
+            <FG label="Notas" full><textarea value={form.notas || ""} onChange={e => set("notas", e.target.value)} placeholder="Observaciones..." /></FG>
+            {otrasTareas.length > 0 && <>
+              <div className="form-section">Dependencias</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {otrasTareas.map(t => (
+                  <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, cursor: "pointer" }}>
+                    <input type="checkbox" checked={(form.dependencias || []).includes(t.id)} onChange={() => toggleDep(t.id)} style={{ accentColor: "var(--blue)" }} />
+                    <span>{t.nombre}</span>
+                    {t.fecha_fin && <span style={{ fontSize: 10, color: "var(--muted)" }}>hasta {fmtDate(t.fecha_fin)}</span>}
+                  </label>
+                ))}
+              </div>
+            </>}
           </>}
+
+          {/* ── TAB SUBTAREAS ── */}
+          {tabModal === "subtareas" && <>
+            {!tarea?.id
+              ? <div className="info-box accent" style={{ fontSize: 12 }}>Guardá la tarea primero para poder agregar subtareas.</div>
+              : <>
+                  {/* Formulario nueva/editar subtarea */}
+                  <div className="card" style={{ margin: 0, marginBottom: 14, padding: 14, background: "var(--surface2)" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--blue)", letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 }}>
+                      {editSubtareaId ? "Editando subtarea" : "Nueva subtarea"}
+                    </div>
+                    <FG label="Descripción *">
+                      <input value={subForm.descripcion} onChange={e => setSub("descripcion", e.target.value)} placeholder="Ej: Cotizar materiales" style={inStyle} />
+                    </FG>
+                    <div className="form-grid" style={{ marginTop: 10 }}>
+                      <FG label="Fecha inicio">
+                        <input type="date" value={subForm.fecha_inicio} onChange={e => setSub("fecha_inicio", e.target.value)}
+                          min={form.fecha_inicio || undefined} max={form.fecha_fin || undefined} />
+                      </FG>
+                      <FG label="Fecha fin">
+                        <input type="date" value={subForm.fecha_fin} onChange={e => setSub("fecha_fin", e.target.value)}
+                          min={subForm.fecha_inicio || form.fecha_inicio || undefined} max={form.fecha_fin || undefined} />
+                      </FG>
+                      <FG label="% Avance">
+                        <input type="number" min={0} max={100} value={subForm.porcentaje_avance} onChange={e => setSub("porcentaje_avance", parseInt(e.target.value) || 0)} />
+                      </FG>
+                      <FG label="Responsable">
+                        <select value={subForm.responsable} onChange={e => setSub("responsable", e.target.value)}>
+                          <option value="">Sin asignar</option>
+                          {perfiles.map(p => <option key={p.id} value={p.nombre}>{p.nombre}</option>)}
+                        </select>
+                      </FG>
+                    </div>
+                    {form.fecha_inicio && form.fecha_fin && (
+                      <div style={{ fontSize: 10, color: "var(--muted2)", marginBottom: 8 }}>
+                        Rango de la tarea madre: {fmtDate(form.fecha_inicio)} → {fmtDate(form.fecha_fin)}
+                      </div>
+                    )}
+                    <div className="flex-gap" style={{ justifyContent: "flex-end", marginTop: 8 }}>
+                      {editSubtareaId && (
+                        <button className="btn btn-ghost btn-sm" onClick={() => { setEditSubtareaId(null); setSubForm(blankSubForm()); }}>Cancelar</button>
+                      )}
+                      <button className="btn btn-primary btn-sm" onClick={handleGuardarSubtarea} disabled={savingSubtarea || !subForm.descripcion.trim()}>
+                        {savingSubtarea ? "..." : editSubtareaId ? "Guardar cambios" : "+ Agregar"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Lista subtareas */}
+                  {subtareas.length === 0
+                    ? <div className="empty-state" style={{ padding: "24px 0" }}>Sin subtareas</div>
+                    : subtareas.map(s => (
+                        <div key={s.id} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r2)", padding: "12px 14px", marginBottom: 8 }}>
+                          <div className="flex-between">
+                            <div style={{ fontWeight: 600, fontSize: 13, color: "var(--navy)" }}>{s.descripcion}</div>
+                            <div className="flex-gap">
+                              <button className="btn btn-ghost btn-sm" onClick={() => handleEditarSubtarea(s)}>✏</button>
+                              <button
+                                onClick={() => handleEliminarSubtarea(s.id)}
+                                style={{ background: "none", border: "none", color: "var(--muted2)", cursor: "pointer", fontSize: 14 }}
+                                onMouseEnter={e => e.currentTarget.style.color = "var(--danger)"}
+                                onMouseLeave={e => e.currentTarget.style.color = "var(--muted2)"}
+                              >✕</button>
+                            </div>
+                          </div>
+                          <div className="req-meta mt8">
+                            {s.responsable && <span>👤 {s.responsable}</span>}
+                            {s.fecha_inicio && <><span>·</span><span>{fmtDate(s.fecha_inicio)} → {fmtDate(s.fecha_fin)}</span></>}
+                            <span>·</span><span>{s.porcentaje_avance || 0}% avance</span>
+                          </div>
+                          <div className="mt8"><PctBar pct={s.porcentaje_avance || 0} /></div>
+                        </div>
+                      ))
+                  }
+                </>
+            }
+          </>}
+
+          {/* ── TAB ADJUNTOS ── */}
+          {tabModal === "adjuntos" && <>
+            {!tarea?.id
+              ? <div className="info-box accent" style={{ fontSize: 12 }}>Guardá la tarea primero para poder adjuntar archivos.</div>
+              : <AdjuntosPanel proyectoId={proyectoId} tareaId={tarea.id} notify={() => {}} />
+            }
+          </>}
+
         </div>
+
         <div className="mftr" style={{ justifyContent: "space-between" }}>
           <div>
             {tarea?.id && !confirmEliminar && (
@@ -1075,7 +1261,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                   <div key={t.id} className="gantt-row" style={{ gridTemplateColumns: cols }} onClick={() => setModalTarea(t)}>
                     <div className="gc-label">
                       <div className="gc-name">{t.nombre}{criticas.has(t.id) && <span className="cc-badge">CC</span>}</div>
-                      <div className="gc-sub">{t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
+                      <div className="gc-sub">{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
                     </div>
                     <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}` }}>
                       {barStyle
@@ -1113,7 +1299,8 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                   </div>
                   <div style={{ fontWeight: 600, fontSize: 13, color: "var(--navy)", marginBottom: 6 }}>{t.nombre}</div>
                   <div className="req-meta">
-                    {t.responsable && <span>{t.responsable}</span>}
+                    {t.owner && <span>🎯 {t.owner}</span>}
+                    {t.responsable && <><span>·</span><span>👤 {t.responsable}</span></>}
                     {t.fecha_inicio && <><span>·</span><span>{fmtDate(t.fecha_inicio)} → {fmtDate(t.fecha_fin)}</span></>}
                     <span>·</span><span>{t.duracion_dias} días hábiles</span>
                     {(t.dependencias || []).length > 0 && <><span>·</span><span>{t.dependencias.length} dep.</span></>}
