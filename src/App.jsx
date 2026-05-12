@@ -215,12 +215,23 @@ const api = {
     return data;
   },
   async getProyectos(filtros = {}) {
-    let q = supabase.from("proyectos").select("*, proyecto_recursos(*), proyecto_tareas(*), proyecto_contactos(*)").order("created_at", { ascending: false });
+    let q = supabase.from("proyectos").select("*, proyecto_recursos(*), proyecto_tareas(*)").order("created_at", { ascending: false });
     if (filtros.empresa) q = q.eq("empresa", filtros.empresa);
     if (filtros.status)  q = q.eq("status",  filtros.status);
     const { data, error } = await q;
     if (error) throw error;
-    return data || [];
+    // Cargar contactos por separado para evitar problemas de schema cache
+    const proyectos = data || [];
+    if (proyectos.length) {
+      const ids = proyectos.map(p => p.id);
+      const { data: contactos } = await supabase.from("proyecto_contactos").select("*").in("proyecto_id", ids);
+      if (contactos) {
+        proyectos.forEach(p => {
+          p.proyecto_contactos = contactos.filter(c => c.proyecto_id === p.id);
+        });
+      }
+    }
+    return proyectos;
   },
   async crearProyecto(proy, recursos, contactos) {
     const { data, error } = await supabase.from("proyectos").insert([proy]).select().single();
