@@ -199,34 +199,62 @@ function calcFechaFin(inicio, duracion, diasHabiles) {
 
 // ─── API ─────────────────────────────────────────────────────────────────────
 const api = {
+  async getPerfiles() {
+    const { data, error } = await supabase.from("perfiles").select("id, nombre, email").eq("activo", true).order("nombre");
+    if (error) throw error;
+    return data || [];
+  },
+  async getRecursosCatalogo() {
+    const { data, error } = await supabase.from("proyecto_recursos_catalogo").select("*").eq("activo", true).order("nombre");
+    if (error) throw error;
+    return data || [];
+  },
+  async agregarRecursoCatalogo(nombre) {
+    const { data, error } = await supabase.from("proyecto_recursos_catalogo").insert([{ nombre, tipo: "otro" }]).select().single();
+    if (error) throw error;
+    return data;
+  },
   async getProyectos(filtros = {}) {
-    let q = supabase.from("proyectos").select("*, proyecto_recursos(*), proyecto_tareas(*)").order("created_at", { ascending: false });
+    let q = supabase.from("proyectos").select("*, proyecto_recursos(*), proyecto_tareas(*), proyecto_contactos(*)").order("created_at", { ascending: false });
     if (filtros.empresa) q = q.eq("empresa", filtros.empresa);
     if (filtros.status)  q = q.eq("status",  filtros.status);
     const { data, error } = await q;
     if (error) throw error;
     return data || [];
   },
-  async crearProyecto(proy, recursos) {
+  async crearProyecto(proy, recursos, contactos) {
     const { data, error } = await supabase.from("proyectos").insert([proy]).select().single();
     if (error) throw error;
     if (recursos?.length)
-      await supabase.from("proyecto_recursos").insert(recursos.map(r => ({ ...r, proyecto_id: data.id })));
+      await supabase.from("proyecto_recursos").insert(recursos.map(r => ({ nombre: r, proyecto_id: data.id })));
+    if (contactos?.length)
+      await supabase.from("proyecto_contactos").insert(contactos.map(c => ({ ...c, proyecto_id: data.id })));
     return data;
   },
-  async actualizarProyecto(id, cambios) {
+  async actualizarProyecto(id, cambios, recursos, contactos) {
     const { data, error } = await supabase.from("proyectos").update({ ...cambios, updated_at: new Date().toISOString() }).eq("id", id).select().single();
     if (error) throw error;
+    // Reemplazar recursos si se pasan
+    if (recursos !== undefined) {
+      await supabase.from("proyecto_recursos").delete().eq("proyecto_id", id);
+      if (recursos.length) await supabase.from("proyecto_recursos").insert(recursos.map(r => ({ nombre: r, proyecto_id: id })));
+    }
+    // Reemplazar contactos si se pasan
+    if (contactos !== undefined) {
+      await supabase.from("proyecto_contactos").delete().eq("proyecto_id", id);
+      if (contactos.length) await supabase.from("proyecto_contactos").insert(contactos.map(c => ({ ...c, proyecto_id: id })));
+    }
     return data;
   },
   async eliminarProyecto(id) {
-    // Eliminar en cascada: tareas → recursos → proyecto
     const { error: e1 } = await supabase.from("proyecto_tareas").delete().eq("proyecto_id", id);
     if (e1) throw e1;
     const { error: e2 } = await supabase.from("proyecto_recursos").delete().eq("proyecto_id", id);
     if (e2) throw e2;
-    const { error: e3 } = await supabase.from("proyectos").delete().eq("id", id);
+    const { error: e3 } = await supabase.from("proyecto_contactos").delete().eq("proyecto_id", id);
     if (e3) throw e3;
+    const { error: e4 } = await supabase.from("proyectos").delete().eq("id", id);
+    if (e4) throw e4;
   },
   async crearTarea(tarea) {
     const { data, error } = await supabase.from("proyecto_tareas").insert([tarea]).select().single();
@@ -290,27 +318,72 @@ function ProyectoModal({ proyecto, onClose, onSave }) {
     descripcion: "", fecha_inicio: "", fecha_fin: "", responsable: "", status: "planificado",
     ...(proyecto || {}),
   });
+
+  // Recursos: array de strings (nombres)
   const [recursos, setRecursos] = useState(proyecto?.proyecto_recursos?.map(r => r.nombre) || []);
-  const [nuevoRecurso, setNuevoRecurso] = useState("");
+  // Contactos: array de {nombre, email}
+  const [contactos, setContactos] = useState(proyecto?.proyecto_contactos || []);
+  // Catálogo de recursos desde Supabase
+  const [recursosCatalogo, setRecursosCatalogo] = useState([]);
+  // Perfiles desde Supabase
+  const [perfiles, setPerfiles] = useState([]);
+  // Estado para agregar recurso manual
+  const [nuevoRecursoManual, setNuevoRecursoManual] = useState("");
+  const [agregandoRecurso, setAgregandoRecurso] = useState(false);
   const [saving, setSaving] = useState(false);
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    Promise.all([api.getPerfiles(), api.getRecursosCatalogo()])
+      .then(([p, r]) => { setPerfiles(p); setRecursosCatalogo(r); });
+  }, []);
+
+  // ── Recursos ──
+  const toggleRecurso = (nombre) => {
+    setRecursos(prev =>
+      prev.includes(nombre) ? prev.filter(r => r !== nombre) : [...prev, nombre]
+    );
+  };
+
+  const handleAgregarRecursoManual = async () => {
+    const nombre = nuevoRecursoManual.trim();
+    if (!nombre) return;
+    setAgregandoRecurso(true);
+    try {
+      const nuevo = await api.agregarRecursoCatalogo(nombre);
+      setRecursosCatalogo(prev => [...prev, nuevo]);
+      setRecursos(prev => [...prev, nuevo.nombre]);
+      setNuevoRecursoManual("");
+    } catch (e) {
+      // Si ya existe, simplemente agregarlo a la selección
+      if (!recursos.includes(nombre)) setRecursos(prev => [...prev, nombre]);
+      setNuevoRecursoManual("");
+    } finally { setAgregandoRecurso(false); }
+  };
+
+  // ── Contactos ──
+  const addContacto = () => setContactos(prev => [...prev, { nombre: "", email: "" }]);
+  const setContacto = (i, k, v) => {
+    const arr = [...contactos];
+    arr[i] = { ...arr[i], [k]: v };
+    setContactos(arr);
+  };
+  const removeContacto = (i) => setContactos(prev => prev.filter((_, j) => j !== i));
 
   const handleSave = async () => {
     if (!form.nombre || !form.empresa) return alert("Completá nombre y empresa");
     setSaving(true);
     try {
-      proyecto
-        ? await api.actualizarProyecto(proyecto.id, form)
-        : await api.crearProyecto(form, recursos.map(r => ({ nombre: r })));
+      const contactosValidos = contactos.filter(c => c.nombre?.trim() || c.email?.trim());
+      if (proyecto) {
+        await api.actualizarProyecto(proyecto.id, form, recursos, contactosValidos);
+      } else {
+        await api.crearProyecto(form, recursos, contactosValidos);
+      }
       onSave();
     } catch (e) { alert("Error: " + e.message); }
     finally { setSaving(false); }
-  };
-
-  const addRecurso = () => {
-    if (!nuevoRecurso.trim()) return;
-    setRecursos([...recursos, nuevoRecurso.trim()]);
-    setNuevoRecurso("");
   };
 
   return (
@@ -321,34 +394,117 @@ function ProyectoModal({ proyecto, onClose, onSave }) {
           <button className="mclose" onClick={onClose}>✕</button>
         </div>
         <div className="mbody">
+
+          {/* ── Datos generales ── */}
           <div className="form-section">Datos generales</div>
           <div className="form-grid">
-            <FG label="Empresa *"><select value={form.empresa} onChange={e => set("empresa", e.target.value)}>{EMPRESAS.map(e => <option key={e}>{e}</option>)}</select></FG>
-            <FG label="Tipo"><select value={form.tipo} onChange={e => set("tipo", e.target.value)}><option value="interno">Interno</option><option value="externo">Externo</option></select></FG>
+            <FG label="Empresa *">
+              <select value={form.empresa} onChange={e => set("empresa", e.target.value)}>
+                {EMPRESAS.map(e => <option key={e}>{e}</option>)}
+              </select>
+            </FG>
+            <FG label="Tipo">
+              <select value={form.tipo} onChange={e => set("tipo", e.target.value)}>
+                <option value="interno">Interno</option>
+                <option value="externo">Externo</option>
+              </select>
+            </FG>
           </div>
           <div className="form-grid">
-            <FG label="Nombre *" full><input value={form.nombre} onChange={e => set("nombre", e.target.value)} placeholder="Ej: Varada Golondrina 2026" /></FG>
+            <FG label="Nombre *" full>
+              <input value={form.nombre} onChange={e => set("nombre", e.target.value)} placeholder="Ej: Varada Golondrina 2026" />
+            </FG>
           </div>
           <div className="form-grid">
-            <FG label="Cliente (opcional)"><input value={form.cliente || ""} onChange={e => set("cliente", e.target.value)} placeholder="Ej: Fugro" /></FG>
-            <FG label="Responsable"><input value={form.responsable || ""} onChange={e => set("responsable", e.target.value)} /></FG>
-            <FG label="Fecha inicio"><input type="date" value={form.fecha_inicio || ""} onChange={e => set("fecha_inicio", e.target.value)} /></FG>
-            <FG label="Fecha fin estimada"><input type="date" value={form.fecha_fin || ""} onChange={e => set("fecha_fin", e.target.value)} /></FG>
+            <FG label="Cliente (opcional)">
+              <input value={form.cliente || ""} onChange={e => set("cliente", e.target.value)} placeholder="Ej: Fugro" />
+            </FG>
+            <FG label="Responsable">
+              <select value={form.responsable || ""} onChange={e => set("responsable", e.target.value)}>
+                <option value="">Sin asignar</option>
+                {perfiles.map(p => (
+                  <option key={p.id} value={p.nombre}>{p.nombre}</option>
+                ))}
+              </select>
+            </FG>
+            <FG label="Fecha inicio">
+              <input type="date" value={form.fecha_inicio || ""} onChange={e => set("fecha_inicio", e.target.value)} />
+            </FG>
+            <FG label="Fecha fin estimada">
+              <input type="date" value={form.fecha_fin || ""} onChange={e => set("fecha_fin", e.target.value)} />
+            </FG>
           </div>
           <div className="form-grid">
-            <FG label="Status"><select value={form.status} onChange={e => set("status", e.target.value)}>{Object.entries(STATUS_PROYECTO).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></FG>
+            <FG label="Status">
+              <select value={form.status} onChange={e => set("status", e.target.value)}>
+                {Object.entries(STATUS_PROYECTO).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+            </FG>
           </div>
-          <FG label="Descripción" full><textarea value={form.descripcion || ""} onChange={e => set("descripcion", e.target.value)} placeholder="Descripción del proyecto..." /></FG>
+          <FG label="Descripción" full>
+            <textarea value={form.descripcion || ""} onChange={e => set("descripcion", e.target.value)} placeholder="Descripción del proyecto..." />
+          </FG>
+
+          {/* ── Contactos de cliente ── */}
+          <div className="form-section">Contactos de cliente</div>
+          {contactos.length === 0 && (
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Sin contactos — opcional</div>
+          )}
+          {contactos.map((c, i) => (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 10, marginBottom: 8, alignItems: "end" }}>
+              <FG label={i === 0 ? "Nombre" : ""}>
+                <input value={c.nombre || ""} onChange={e => setContacto(i, "nombre", e.target.value)} placeholder="Ej: Juan Pérez" />
+              </FG>
+              <FG label={i === 0 ? "Email" : ""}>
+                <input type="email" value={c.email || ""} onChange={e => setContacto(i, "email", e.target.value)} placeholder="juan@empresa.com" />
+              </FG>
+              <button
+                onClick={() => removeContacto(i)}
+                style={{ background: "none", border: "1px solid var(--border)", borderRadius: "var(--r)", color: "var(--muted2)", cursor: "pointer", fontSize: 14, padding: "8px 10px", marginBottom: 1 }}
+                onMouseEnter={e => e.currentTarget.style.color = "var(--danger)"}
+                onMouseLeave={e => e.currentTarget.style.color = "var(--muted2)"}
+              >✕</button>
+            </div>
+          ))}
+          <button className="btn btn-ghost btn-sm" onClick={addContacto}>+ Agregar contacto</button>
+
+          {/* ── Recursos asignados ── */}
           <div className="form-section">Recursos asignados</div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-            {recursos.map((r, i) => <div key={i} className="recurso-tag">{r}<button onClick={() => setRecursos(recursos.filter((_, j) => j !== i))}>✕</button></div>)}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+            {recursosCatalogo.map(r => (
+              <div
+                key={r.id}
+                onClick={() => toggleRecurso(r.nombre)}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  background: recursos.includes(r.nombre) ? "var(--blue)" : "var(--surface2)",
+                  color: recursos.includes(r.nombre) ? "#fff" : "var(--muted)",
+                  border: `1px solid ${recursos.includes(r.nombre) ? "var(--blue)" : "var(--border)"}`,
+                  borderRadius: 4, padding: "4px 10px", fontSize: 11, fontWeight: 600,
+                  cursor: "pointer", transition: "all .12s", userSelect: "none",
+                }}
+              >
+                {recursos.includes(r.nombre) ? "✓ " : ""}{r.nombre}
+              </div>
+            ))}
           </div>
+          {/* Agregar recurso manual */}
           <div className="flex-gap">
-            <input value={nuevoRecurso} onChange={e => setNuevoRecurso(e.target.value)} onKeyDown={e => e.key === "Enter" && addRecurso()}
-              placeholder="Ej: Atlantic Dama, Base Quequén..."
-              style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r)", padding: "7px 10px", fontSize: 12, fontFamily: "var(--sans)", outline: "none" }} />
-            <button className="btn btn-ghost btn-sm" onClick={addRecurso}>+ Agregar</button>
+            <input
+              value={nuevoRecursoManual}
+              onChange={e => setNuevoRecursoManual(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleAgregarRecursoManual()}
+              placeholder="Agregar recurso nuevo..."
+              style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r)", padding: "7px 10px", fontSize: 12, fontFamily: "var(--sans)", outline: "none" }}
+            />
+            <button className="btn btn-ghost btn-sm" onClick={handleAgregarRecursoManual} disabled={agregandoRecurso || !nuevoRecursoManual.trim()}>
+              {agregandoRecurso ? "..." : "+ Agregar"}
+            </button>
           </div>
+          <div style={{ fontSize: 10, color: "var(--muted2)", marginTop: 6 }}>
+            Los recursos nuevos se guardan en el catálogo para usar en futuros proyectos.
+          </div>
+
         </div>
         <div className="mftr">
           <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
@@ -567,10 +723,11 @@ function PageProyectos({ onSelectProyecto, notify }) {
                   <div className="req-title">{p.nombre}</div>
                   <div className="req-meta">
                     {p.cliente    && <span>👤 {p.cliente}</span>}
-                    {p.responsable && <><span>·</span><span>{p.responsable}</span></>}
+                    {p.responsable && <><span>·</span><span>👤 {p.responsable}</span></>}
                     {p.fecha_inicio && <><span>·</span><span>{fmtDate(p.fecha_inicio)} → {fmtDate(p.fecha_fin)}</span></>}
                     <span>·</span><span>{tareas.length} tareas</span>
                     {(p.proyecto_recursos || []).length > 0 && <><span>·</span><span>{(p.proyecto_recursos || []).map(r => r.nombre).join(", ")}</span></>}
+                    {(p.proyecto_contactos || []).length > 0 && <><span>·</span><span>📧 {(p.proyecto_contactos || []).map(c => c.nombre).join(", ")}</span></>}
                   </div>
                   {tareas.length > 0 && <div className="mt8"><PctBar pct={pct} /><div style={{ fontSize: 9, color: "var(--muted)", fontFamily: "var(--mono)", marginTop: 3 }}>{pct}% avance global</div></div>}
                 </div>
@@ -677,6 +834,16 @@ function PageDetalle({ proyectoId, onBack, notify }) {
           <div className="flex-gap mt8">{(proyecto.proyecto_recursos || []).map((r, i) => <div key={i} className="recurso-tag">{r.nombre}</div>)}</div>
         )}
         {proyecto.descripcion && <div className="info-box mt8" style={{ fontSize: 12 }}>{proyecto.descripcion}</div>}
+        {(proyecto.proyecto_contactos || []).length > 0 && (
+          <div className="mt8" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {(proyecto.proyecto_contactos || []).map((c, i) => (
+              <div key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 10px", fontSize: 11 }}>
+                <span style={{ fontWeight: 600, color: "var(--navy)" }}>{c.nombre}</span>
+                {c.email && <a href={`mailto:${c.email}`} onClick={e => e.stopPropagation()} style={{ color: "var(--blue)", fontSize: 10 }}>{c.email}</a>}
+              </div>
+            ))}
+          </div>
+        )}
         <div className="mt8"><PctBar pct={pct} /></div>
       </div>
 
