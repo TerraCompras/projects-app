@@ -243,7 +243,8 @@ const api = {
     return data;
   },
   async actualizarProyecto(id, cambios, recursos, contactos) {
-    const { data, error } = await supabase.from("proyectos").update({ ...cambios, updated_at: new Date().toISOString() }).eq("id", id).select().single();
+    // Actualizar campos del proyecto (sin select de relaciones para evitar schema cache)
+    const { error } = await supabase.from("proyectos").update({ ...cambios, updated_at: new Date().toISOString() }).eq("id", id);
     if (error) throw error;
     // Reemplazar recursos si se pasan
     if (recursos !== undefined) {
@@ -255,7 +256,6 @@ const api = {
       await supabase.from("proyecto_contactos").delete().eq("proyecto_id", id);
       if (contactos.length) await supabase.from("proyecto_contactos").insert(contactos.map(c => ({ ...c, proyecto_id: id })));
     }
-    return data;
   },
   async eliminarProyecto(id) {
     const { error: e1 } = await supabase.from("proyecto_tareas").delete().eq("proyecto_id", id);
