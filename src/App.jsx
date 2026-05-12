@@ -289,6 +289,36 @@ const api = {
     const { error } = await supabase.from("proyecto_tareas").delete().eq("id", id);
     if (error) throw error;
   },
+  async getAdjuntos(proyectoId) {
+    const { data, error } = await supabase.from("proyecto_adjuntos").select("*").eq("proyecto_id", proyectoId).order("created_at", { ascending: false });
+    if (error) throw error;
+    return data || [];
+  },
+  async subirAdjunto(file, proyectoId, tareaId = null) {
+    const ext = file.name.split(".").pop();
+    const path = `proyectos/${proyectoId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    const { error: errUp } = await supabase.storage.from("proyecto-adjuntos").upload(path, file, { upsert: true });
+    if (errUp) throw errUp;
+    const { data: urlData } = supabase.storage.from("proyecto-adjuntos").getPublicUrl(path);
+    const adjunto = {
+      proyecto_id: proyectoId,
+      tarea_id: tareaId || null,
+      nombre: file.name,
+      url: urlData.publicUrl,
+      tipo: file.type || ext,
+      tamanio: file.size,
+    };
+    const { data, error } = await supabase.from("proyecto_adjuntos").insert([adjunto]).select().single();
+    if (error) throw error;
+    return data;
+  },
+  async eliminarAdjunto(id, url) {
+    // Extraer path del storage desde la URL
+    const path = url.split("/proyecto-adjuntos/")[1];
+    if (path) await supabase.storage.from("proyecto-adjuntos").remove([path]);
+    const { error } = await supabase.from("proyecto_adjuntos").delete().eq("id", id);
+    if (error) throw error;
+  },
 };
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -596,6 +626,10 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar }) 
             ))}
           </div>
           <FG label="Notas" full><textarea value={form.notas || ""} onChange={e => set("notas", e.target.value)} placeholder="Observaciones..." /></FG>
+          {tarea?.id && <>
+            <div className="form-section">Adjuntos</div>
+            <AdjuntosPanel proyectoId={proyectoId} tareaId={tarea.id} notify={() => {}} />
+          </>}
           {otrasTareas.length > 0 && <>
             <div className="form-section">Dependencias</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -758,6 +792,153 @@ function PageProyectos({ onSelectProyecto, notify }) {
   );
 }
 
+
+// ─── ÍCONO POR TIPO DE ARCHIVO ────────────────────────────────────────────────
+function FileIcon({ tipo, nombre }) {
+  const ext = (nombre || "").split(".").pop().toLowerCase();
+  if (["pdf"].includes(ext)) return <span style={{ color: "#C0392B", fontSize: 16 }}>📄</span>;
+  if (["xls","xlsx","csv"].includes(ext)) return <span style={{ color: "#1E7A4A", fontSize: 16 }}>📊</span>;
+  if (["doc","docx"].includes(ext)) return <span style={{ color: "#235C96", fontSize: 16 }}>📝</span>;
+  if (["jpg","jpeg","png","gif","webp"].includes(ext)) return <span style={{ color: "#B07D0A", fontSize: 16 }}>🖼</span>;
+  if (["eml","msg"].includes(ext)) return <span style={{ color: "#6381A7", fontSize: 16 }}>✉️</span>;
+  return <span style={{ fontSize: 16 }}>📎</span>;
+}
+
+function fmtTamanio(bytes) {
+  if (!bytes) return "";
+  if (bytes < 1024) return bytes + " B";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+// ─── PANEL DE ADJUNTOS ────────────────────────────────────────────────────────
+function AdjuntosPanel({ proyectoId, tareaId = null, notify }) {
+  const [adjuntos, setAdjuntos] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [eliminandoId, setEliminandoId] = useState(null);
+  const inputId = `adj-input-${proyectoId}-${tareaId || "proy"}`;
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await api.getAdjuntos(proyectoId);
+      // Si es panel de tarea, filtrar por tareaId; si es panel de proyecto, mostrar los sin tarea
+      setAdjuntos(tareaId
+        ? data.filter(a => a.tarea_id === tareaId)
+        : data.filter(a => !a.tarea_id)
+      );
+    } finally { setLoading(false); }
+  }, [proyectoId, tareaId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleUpload = async (files) => {
+    if (!files?.length) return;
+    setUploading(true);
+    try {
+      for (const file of Array.from(files)) {
+        await api.subirAdjunto(file, proyectoId, tareaId);
+      }
+      notify(`${files.length > 1 ? files.length + " archivos subidos" : "Archivo subido"}`, "success");
+      load();
+    } catch (e) {
+      notify("Error al subir: " + e.message, "error");
+    } finally { setUploading(false); }
+  };
+
+  const handleEliminar = async (adj) => {
+    if (!window.confirm(`¿Eliminar "${adj.nombre}"?`)) return;
+    setEliminandoId(adj.id);
+    try {
+      await api.eliminarAdjunto(adj.id, adj.url);
+      notify("Adjunto eliminado", "warn");
+      load();
+    } catch (e) {
+      notify("Error: " + e.message, "error");
+    } finally { setEliminandoId(null); }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    handleUpload(e.dataTransfer.files);
+  };
+
+  return (
+    <div>
+      {/* Zona de drop */}
+      <div
+        onDrop={handleDrop}
+        onDragOver={e => e.preventDefault()}
+        onClick={() => document.getElementById(inputId).click()}
+        style={{
+          border: "2px dashed var(--border)", borderRadius: "var(--r2)",
+          padding: "20px", textAlign: "center", cursor: "pointer",
+          background: "var(--surface2)", transition: "all .15s", marginBottom: 12,
+        }}
+        onMouseEnter={e => e.currentTarget.style.borderColor = "var(--blue)"}
+        onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border)"}
+      >
+        <input
+          id={inputId}
+          type="file"
+          multiple
+          style={{ display: "none" }}
+          onChange={e => handleUpload(e.target.files)}
+          accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.jpg,.jpeg,.png,.eml,.msg,.txt"
+        />
+        {uploading
+          ? <div style={{ fontSize: 12, color: "var(--muted)" }}><span className="spin" style={{ display: "inline-block" }}>◌</span> Subiendo...</div>
+          : <div>
+              <div style={{ fontSize: 22, marginBottom: 4 }}>📎</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>Arrastrá archivos o hacé click para subir</div>
+              <div style={{ fontSize: 10, color: "var(--muted2)", marginTop: 2 }}>PDF, Word, Excel, imágenes, correos (.eml)</div>
+            </div>
+        }
+      </div>
+
+      {/* Lista de adjuntos */}
+      {loading
+        ? <div style={{ fontSize: 12, color: "var(--muted)", padding: "8px 0" }}>Cargando...</div>
+        : adjuntos.length === 0
+          ? <div style={{ fontSize: 12, color: "var(--muted2)", padding: "4px 0" }}>Sin adjuntos</div>
+          : adjuntos.map(adj => (
+              <div key={adj.id} style={{
+                display: "flex", alignItems: "center", gap: 10,
+                padding: "8px 12px", background: "var(--surface)",
+                border: "1px solid var(--border)", borderRadius: "var(--r)",
+                marginBottom: 6, transition: "all .12s",
+              }}>
+                <FileIcon tipo={adj.tipo} nombre={adj.nombre} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <a
+                    href={adj.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ fontSize: 12, fontWeight: 600, color: "var(--blue)", textDecoration: "none", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                  >
+                    {adj.nombre}
+                  </a>
+                  <div style={{ fontSize: 10, color: "var(--muted2)" }}>
+                    {fmtTamanio(adj.tamanio)}{adj.created_at ? " · " + fmtDate(adj.created_at.slice(0,10)) : ""}
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleEliminar(adj)}
+                  disabled={eliminandoId === adj.id}
+                  style={{ background: "none", border: "none", color: "var(--muted2)", cursor: "pointer", fontSize: 14, padding: "2px 6px", borderRadius: 4, flexShrink: 0 }}
+                  onMouseEnter={e => e.currentTarget.style.color = "var(--danger)"}
+                  onMouseLeave={e => e.currentTarget.style.color = "var(--muted2)"}
+                >
+                  {eliminandoId === adj.id ? "..." : "✕"}
+                </button>
+              </div>
+            ))
+      }
+    </div>
+  );
+}
+
 // ─── PAGE DETALLE ─────────────────────────────────────────────────────────────
 function PageDetalle({ proyectoId, onBack, notify }) {
   const [proyecto, setProyecto]       = useState(null);
@@ -874,7 +1055,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
       </div>
 
       <div className="tabs-row">
-        {[{ id: "gantt", label: "Gantt" }, { id: "lista", label: "Lista de tareas" }, { id: "critico", label: "Camino crítico" }].map(t => (
+        {[{ id: "gantt", label: "Gantt" }, { id: "lista", label: "Lista de tareas" }, { id: "critico", label: "Camino crítico" }, { id: "adjuntos", label: "📎 Adjuntos" }].map(t => (
           <div key={t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</div>
         ))}
       </div>
@@ -974,6 +1155,13 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                 );
               })
           }
+        </div>
+      )}
+
+      {tab === "adjuntos" && (
+        <div className="card">
+          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", letterSpacing: 1, textTransform: "uppercase", marginBottom: 14 }}>Adjuntos del proyecto</div>
+          <AdjuntosPanel proyectoId={proyectoId} notify={notify} />
         </div>
       )}
 
