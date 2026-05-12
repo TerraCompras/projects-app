@@ -234,7 +234,8 @@ const api = {
     return proyectos;
   },
   async crearProyecto(proy, recursos, contactos) {
-    const { data, error } = await supabase.from("proyectos").insert([proy]).select().single();
+    // Insert sin select de relaciones para evitar schema cache
+    const { data, error } = await supabase.from("proyectos").insert([proy]).select("id, nombre, empresa, status, tipo, cliente, responsable, fecha_inicio, fecha_fin, descripcion, created_at").single();
     if (error) throw error;
     if (recursos?.length)
       await supabase.from("proyecto_recursos").insert(recursos.map(r => ({ nombre: r, proyecto_id: data.id })));
@@ -243,18 +244,25 @@ const api = {
     return data;
   },
   async actualizarProyecto(id, cambios, recursos, contactos) {
-    // Actualizar campos del proyecto (sin select de relaciones para evitar schema cache)
-    const { error } = await supabase.from("proyectos").update({ ...cambios, updated_at: new Date().toISOString() }).eq("id", id);
-    if (error) throw error;
-    // Reemplazar recursos si se pasan
+    // Solo actualizar columnas propias de proyectos, sin relaciones
+    const camposProyecto = { updated_at: new Date().toISOString() };
+    const camposPermitidos = ["nombre","empresa","tipo","cliente","descripcion","fecha_inicio","fecha_fin","responsable","status"];
+    camposPermitidos.forEach(k => { if (cambios[k] !== undefined) camposProyecto[k] = cambios[k]; });
+    const { error: errUpdate } = await supabase.from("proyectos").update(camposProyecto).eq("id", id);
+    if (errUpdate) throw new Error("Error actualizando proyecto: " + errUpdate.message);
+    // Reemplazar recursos
     if (recursos !== undefined) {
       await supabase.from("proyecto_recursos").delete().eq("proyecto_id", id);
       if (recursos.length) await supabase.from("proyecto_recursos").insert(recursos.map(r => ({ nombre: r, proyecto_id: id })));
     }
-    // Reemplazar contactos si se pasan
+    // Reemplazar contactos
     if (contactos !== undefined) {
-      await supabase.from("proyecto_contactos").delete().eq("proyecto_id", id);
-      if (contactos.length) await supabase.from("proyecto_contactos").insert(contactos.map(c => ({ ...c, proyecto_id: id })));
+      const { error: errDelC } = await supabase.from("proyecto_contactos").delete().eq("proyecto_id", id);
+      if (errDelC) throw new Error("Error borrando contactos: " + errDelC.message);
+      if (contactos.length) {
+        const { error: errInsC } = await supabase.from("proyecto_contactos").insert(contactos.map(c => ({ ...c, proyecto_id: id })));
+        if (errInsC) throw new Error("Error insertando contactos: " + errInsC.message);
+      }
     }
   },
   async eliminarProyecto(id) {
@@ -393,7 +401,7 @@ function ProyectoModal({ proyecto, onClose, onSave }) {
         await api.crearProyecto(form, recursos, contactosValidos);
       }
       onSave();
-    } catch (e) { alert("Error: " + e.message); }
+    } catch (e) { console.error("Error completo:", e); alert("Error: " + (e.message || JSON.stringify(e))); }
     finally { setSaving(false); }
   };
 
