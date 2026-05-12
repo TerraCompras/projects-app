@@ -130,6 +130,12 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 .dia-btn{padding:5px 12px;border-radius:var(--r);font-size:11px;font-weight:600;cursor:pointer;user-select:none;transition:all .12s;border:1px solid var(--border)}
 .dia-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
 .dia-btn.inactive{background:var(--surface2);color:var(--muted)}
+.fullscreen-overlay{position:fixed;inset:0;background:#fff;z-index:200;display:flex;flex-direction:column;animation:fadeIn .2s}
+.fs-topbar{background:var(--navy);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.fs-title{color:#fff;font-size:14px;font-weight:700;letter-spacing:.5px}
+.fs-content{flex:1;overflow:auto;padding:24px;background:var(--bg)}
+.fs-btn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:var(--r);padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--sans);display:flex;align-items:center;gap:6px;transition:all .15s}
+.fs-btn:hover{background:rgba(255,255,255,.25)}
 
 /* ── HAMBURGER (mobile) ── */
 .hamburger{display:none;background:none;border:none;cursor:pointer;padding:4px;flex-direction:column;gap:4px}
@@ -1125,6 +1131,30 @@ function AdjuntosPanel({ proyectoId, tareaId = null, notify }) {
   );
 }
 
+// ─── FULLSCREEN WRAPPER ───────────────────────────────────────────────────────
+function FullscreenWrapper({ title, onClose, children }) {
+  // Bloquear scroll del body
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = ""; };
+  }, []);
+
+  return (
+    <div className="fullscreen-overlay">
+      <div className="fs-topbar">
+        <div className="fs-title">🔲 {title}</div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,.5)" }}>Modo presentación</div>
+          <button className="fs-btn" onClick={onClose}>✕ Cerrar</button>
+        </div>
+      </div>
+      <div className="fs-content">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // ─── PAGE DETALLE ─────────────────────────────────────────────────────────────
 function PageDetalle({ proyectoId, onBack, notify }) {
   const [proyecto, setProyecto]       = useState(null);
@@ -1132,6 +1162,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
   const [tab, setTab]                 = useState("gantt");
   const [modalTarea, setModalTarea]   = useState(null);
   const [editProyecto, setEditProyecto] = useState(false);
+  const [fullscreen, setFullscreen]   = useState(null); // "gantt" | "detalle" | null
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1197,6 +1228,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
         <button className="btn btn-ghost btn-sm" onClick={onBack}>← Volver</button>
         <button className="btn btn-ghost btn-sm" onClick={() => setEditProyecto(true)}>✏ Editar</button>
         <button className="btn btn-primary btn-sm" onClick={() => setModalTarea({})}>+ Nueva tarea</button>
+        <button className="btn btn-ghost btn-sm" onClick={() => setFullscreen("detalle")} style={{ marginLeft: "auto" }} title="Modo presentación">🔲 Presentación</button>
       </div>
 
       <div className="card mb12">
@@ -1240,10 +1272,18 @@ function PageDetalle({ proyectoId, onBack, notify }) {
         <div className="stat"><div className="stat-label">Camino crítico</div><div className="stat-value" style={{ color: "var(--warn)" }}>{criticas.size}</div></div>
       </div>
 
-      <div className="tabs-row">
+      <div className="tabs-row" style={{ alignItems: "center" }}>
         {[{ id: "gantt", label: "Gantt" }, { id: "lista", label: "Lista de tareas" }, { id: "critico", label: "Camino crítico" }, { id: "adjuntos", label: "📎 Adjuntos" }].map(t => (
           <div key={t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</div>
         ))}
+        {tab === "gantt" && (
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => setFullscreen("gantt")}
+            style={{ marginLeft: "auto", marginBottom: 2 }}
+            title="Ver Gantt en pantalla completa"
+          >🔲 Ampliar Gantt</button>
+        )}
       </div>
 
       {tab === "gantt" && (
@@ -1368,6 +1408,105 @@ function PageDetalle({ proyectoId, onBack, notify }) {
           onClose={() => setEditProyecto(false)}
           onSave={() => { setEditProyecto(false); notify("Proyecto actualizado", "success"); load(); }}
         />
+      )}
+
+      {/* ── FULLSCREEN GANTT ── */}
+      {fullscreen === "gantt" && (
+        <FullscreenWrapper title={`Gantt — ${proyecto.nombre}`} onClose={() => setFullscreen(null)}>
+          <div className="gantt-wrap" style={{ overflowX: "auto" }}>
+            <div className="gantt-header" style={{ gridTemplateColumns: cols }}>
+              <div className="gh-cell" style={{ textAlign: "left", borderRight: "1px solid var(--border)" }}>Tarea</div>
+              {meses.map((m, i) => <div key={i} className="gh-cell">{m}</div>)}
+              {meses.length === 0 && <div className="gh-cell">Línea de tiempo</div>}
+            </div>
+            {tareas.length === 0
+              ? <div className="empty-state">Sin tareas</div>
+              : tareas.map(t => {
+                  const barStyle = getBarStyle(t);
+                  return (
+                    <div key={t.id} className="gantt-row" style={{ gridTemplateColumns: cols }}>
+                      <div className="gc-label">
+                        <div className="gc-name">{t.nombre}{criticas.has(t.id) && <span className="cc-badge">CC</span>}</div>
+                        <div className="gc-sub">{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
+                      </div>
+                      <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}` }}>
+                        {barStyle
+                          ? <div className={`bar ${getBarClass(t)}`} style={barStyle}>{t.nombre}</div>
+                          : <div style={{ fontSize: 10, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>
+                        }
+                      </div>
+                    </div>
+                  );
+                })
+            }
+            <div style={{ padding: "10px 16px", display: "flex", gap: 14, borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap" }}>
+              {[["var(--danger)", "Camino crítico"], ["var(--blue)", "En fecha"], ["var(--accent2)", "Completada"], ["var(--warn)", "Atrasada"]].map(([color, label]) => (
+                <div key={label} className="flex-gap"><div style={{ width: 10, height: 10, borderRadius: 2, background: color }} /><span style={{ fontSize: 9, color: "var(--muted)" }}>{label}</span></div>
+              ))}
+            </div>
+          </div>
+        </FullscreenWrapper>
+      )}
+
+      {/* ── FULLSCREEN DETALLE ── */}
+      {fullscreen === "detalle" && (
+        <FullscreenWrapper title={proyecto.nombre} onClose={() => setFullscreen(null)}>
+          {/* Card resumen */}
+          <div className="card mb12">
+            <div className="flex-between">
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: "var(--navy)", marginBottom: 6 }}>{proyecto.nombre}</div>
+                <div className="flex-gap">
+                  <span className={`badge ${STATUS_PROYECTO[proyecto.status]?.color || "b-gray"}`}>{STATUS_PROYECTO[proyecto.status]?.label}</span>
+                  <span className={`badge ${proyecto.tipo === "externo" ? "b-purple" : "b-teal"}`}>{proyecto.tipo}</span>
+                  <span style={{ fontSize: 11, color: "var(--muted)" }}>{proyecto.empresa}</span>
+                  {proyecto.cliente && <span style={{ fontSize: 11, color: "var(--muted)" }}>· {proyecto.cliente}</span>}
+                  {proyecto.responsable && <span style={{ fontSize: 11, color: "var(--muted)" }}>· 👤 {proyecto.responsable}</span>}
+                </div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontFamily: "var(--mono)", fontSize: 32, fontWeight: 700, color: "var(--blue)" }}>{pct}%</div>
+                <div style={{ fontSize: 10, color: "var(--muted)" }}>avance global</div>
+              </div>
+            </div>
+            <div className="mt8"><PctBar pct={pct} /></div>
+          </div>
+          {/* Stats */}
+          <div className="stats mb12">
+            <div className="stat"><div className="stat-label">Tareas</div><div className="stat-value" style={{ color: "var(--blue)" }}>{tareas.length}</div></div>
+            <div className="stat"><div className="stat-label">Completadas</div><div className="stat-value" style={{ color: "var(--accent2)" }}>{tareas.filter(t => t.porcentaje_avance >= 100).length}</div></div>
+            <div className="stat"><div className="stat-label">Atrasadas</div><div className="stat-value" style={{ color: "var(--danger)" }}>{atrasadas.length}</div></div>
+            <div className="stat"><div className="stat-label">Camino crítico</div><div className="stat-value" style={{ color: "var(--warn)" }}>{criticas.size}</div></div>
+          </div>
+          {/* Gantt */}
+          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <div style={{ padding: "12px 16px", background: "var(--surface2)", borderBottom: "1px solid var(--border)", fontSize: 11, fontWeight: 700, color: "var(--muted)", letterSpacing: 1, textTransform: "uppercase" }}>Gantt</div>
+            <div className="gantt-wrap" style={{ overflowX: "auto" }}>
+              <div className="gantt-header" style={{ gridTemplateColumns: cols }}>
+                <div className="gh-cell" style={{ textAlign: "left", borderRight: "1px solid var(--border)" }}>Tarea</div>
+                {meses.map((m, i) => <div key={i} className="gh-cell">{m}</div>)}
+                {meses.length === 0 && <div className="gh-cell">Línea de tiempo</div>}
+              </div>
+              {tareas.map(t => {
+                const barStyle = getBarStyle(t);
+                return (
+                  <div key={t.id} className="gantt-row" style={{ gridTemplateColumns: cols }}>
+                    <div className="gc-label">
+                      <div className="gc-name">{t.nombre}{criticas.has(t.id) && <span className="cc-badge">CC</span>}</div>
+                      <div className="gc-sub">{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
+                    </div>
+                    <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}` }}>
+                      {barStyle
+                        ? <div className={`bar ${getBarClass(t)}`} style={barStyle}>{t.nombre}</div>
+                        : <div style={{ fontSize: 10, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>
+                      }
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </FullscreenWrapper>
       )}
     </div>
   );
