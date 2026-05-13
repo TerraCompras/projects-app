@@ -1846,13 +1846,71 @@ function PageDetalle({ proyectoId, onBack, notify }) {
           {/* Stats fila 2: subtareas */}
           {(() => {
             const todasSubs = tareas.flatMap(t => t.subtareas || []);
+            // Calcular por responsable para la tabla
+            const porResp = {};
+            tareas.forEach(t => {
+              const r = t.responsable || "Sin asignar";
+              if (!porResp[r]) porResp[r] = { total: 0, en_curso: 0, completadas: 0, atrasadas: 0, subTotal: 0, subEnCurso: 0, subCompletadas: 0, subAtrasadas: 0 };
+              const esAtrasada = t.fecha_fin && t.fecha_fin < today() && (t.porcentaje_avance||0) < 100;
+              porResp[r].total++;
+              if ((t.porcentaje_avance||0) >= 100) porResp[r].completadas++;
+              else if (esAtrasada) porResp[r].atrasadas++;
+              else if ((t.porcentaje_avance||0) > 0) porResp[r].en_curso++;
+              const misSubs = (t.subtareas || []);
+              porResp[r].subTotal += misSubs.length;
+              porResp[r].subEnCurso += misSubs.filter(s => (s.porcentaje_avance||0) > 0 && (s.porcentaje_avance||0) < 100).length;
+              porResp[r].subCompletadas += misSubs.filter(s => (s.porcentaje_avance||0) >= 100).length;
+              porResp[r].subAtrasadas += misSubs.filter(s => s.fecha_fin && s.fecha_fin < today() && (s.porcentaje_avance||0) < 100).length;
+            });
             return (
-              <div className="stats mb12">
-                <div className="stat"><div className="stat-label">Subtareas total</div><div className="stat-value" style={{ color: "var(--navy)" }}>{todasSubs.length}</div></div>
-                <div className="stat"><div className="stat-label">Pendientes</div><div className="stat-value" style={{ color: "var(--muted)" }}>{todasSubs.filter(s => (s.porcentaje_avance||0) === 0).length}</div></div>
-                <div className="stat"><div className="stat-label">En curso</div><div className="stat-value" style={{ color: "var(--blue)" }}>{todasSubs.filter(s => (s.porcentaje_avance||0) > 0 && (s.porcentaje_avance||0) < 100).length}</div></div>
-                <div className="stat"><div className="stat-label">Completadas</div><div className="stat-value" style={{ color: "var(--accent2)" }}>{todasSubs.filter(s => (s.porcentaje_avance||0) >= 100).length}</div></div>
-              </div>
+              <>
+                <div className="stats mb12">
+                  <div className="stat"><div className="stat-label">Subtareas total</div><div className="stat-value" style={{ color: "var(--navy)" }}>{todasSubs.length}</div></div>
+                  <div className="stat"><div className="stat-label">Pendientes</div><div className="stat-value" style={{ color: "var(--muted)" }}>{todasSubs.filter(s => (s.porcentaje_avance||0) === 0).length}</div></div>
+                  <div className="stat"><div className="stat-label">En curso</div><div className="stat-value" style={{ color: "var(--blue)" }}>{todasSubs.filter(s => (s.porcentaje_avance||0) > 0 && (s.porcentaje_avance||0) < 100).length}</div></div>
+                  <div className="stat"><div className="stat-label">Completadas</div><div className="stat-value" style={{ color: "var(--accent2)" }}>{todasSubs.filter(s => (s.porcentaje_avance||0) >= 100).length}</div></div>
+                </div>
+                {/* Tabla responsables fullscreen */}
+                <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 16 }}>
+                  <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--border)", background: "var(--surface2)" }}>
+                    <div className="stat-label">Tareas y subtareas por responsable de ejecución</div>
+                  </div>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                    <thead>
+                      <tr style={{ background: "var(--surface2)" }}>
+                        <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 600, color: "var(--muted)", fontSize: 9, letterSpacing: .5, textTransform: "uppercase", borderBottom: "1px solid var(--border)" }}>Responsable</th>
+                        <th style={{ padding: "6px 8px", textAlign: "center", fontWeight: 600, color: "var(--muted)", fontSize: 9, letterSpacing: .5, textTransform: "uppercase", borderBottom: "1px solid var(--border)" }} colSpan={4}>— Tareas —</th>
+                        <th style={{ padding: "6px 8px", textAlign: "center", fontWeight: 600, color: "var(--muted)", fontSize: 9, letterSpacing: .5, textTransform: "uppercase", borderBottom: "1px solid var(--border)", borderLeft: "2px solid var(--border)" }} colSpan={4}>— Subtareas —</th>
+                      </tr>
+                      <tr style={{ background: "var(--surface2)" }}>
+                        <th style={{ padding: "4px 12px", borderBottom: "2px solid var(--border)" }}></th>
+                        {["Total","En curso","Complet.","Atras.","Total","En curso","Complet.","Atras."].map((h, i) => (
+                          <th key={i} style={{ padding: "4px 8px", textAlign: "center", fontWeight: 600, color: "var(--muted2)", fontSize: 9, textTransform: "uppercase", borderBottom: "2px solid var(--border)", borderLeft: i === 4 ? "2px solid var(--border)" : "none" }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(porResp).map(([resp, s], idx) => {
+                        const bg = idx % 2 === 0 ? "#fff" : "var(--surface2)";
+                        const cell = (val, color) => <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: val > 0 ? 700 : 400, color: val > 0 ? color : "var(--muted2)", background: bg }}>{val > 0 ? val : "—"}</td>;
+                        return (
+                          <tr key={resp}>
+                            <td style={{ padding: "7px 12px", fontWeight: 600, color: "var(--navy)", fontSize: 11, background: bg, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={resp}>👤 {resp}</td>
+                            {cell(s.total, "var(--navy)")}
+                            {cell(s.en_curso, "var(--blue)")}
+                            {cell(s.completadas, "var(--accent2)")}
+                            <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: s.atrasadas > 0 ? 700 : 400, color: s.atrasadas > 0 ? "var(--danger)" : "var(--muted2)", background: bg }}>{s.atrasadas > 0 ? `⚠ ${s.atrasadas}` : "—"}</td>
+                            <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: s.subTotal > 0 ? 700 : 400, color: "var(--navy)", background: bg, borderLeft: "2px solid var(--border)" }}>{s.subTotal > 0 ? s.subTotal : "—"}</td>
+                            {cell(s.subEnCurso, "var(--blue)")}
+                            {cell(s.subCompletadas, "var(--accent2)")}
+                            <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: s.subAtrasadas > 0 ? 700 : 400, color: s.subAtrasadas > 0 ? "var(--danger)" : "var(--muted2)", background: bg }}>{s.subAtrasadas > 0 ? `⚠ ${s.subAtrasadas}` : "—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             );
           })()}
           {/* Gantt */}
