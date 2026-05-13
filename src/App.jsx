@@ -1369,7 +1369,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                     {/* ── Fila tarea madre ── */}
                     <div
                       className="gantt-row"
-                      style={{ gridTemplateColumns: cols, cursor: "grab", background: "#EEF3FA", borderLeft: "3px solid var(--blue)" }}
+                      style={{ gridTemplateColumns: cols, cursor: "grab", background: "#FFFFFF", borderLeft: "4px solid var(--blue)" }}
                       draggable
                       onDragStart={() => handleDragStart(i)}
                       onDragOver={e => handleDragOver(e, i)}
@@ -1411,7 +1411,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                         <div
                           key={s.id}
                           className="gantt-row"
-                          style={{ gridTemplateColumns: cols, background: "#F8FAFB", borderLeft: "3px solid var(--border)", cursor: "pointer" }}
+                          style={{ gridTemplateColumns: cols, background: "#E8ECF0", borderLeft: "4px solid #A5B5CC", cursor: "pointer" }}
                           onClick={e => { e.stopPropagation(); setModalTarea({ ...t, _openSubtarea: s }); }}
                         >
                           <div className="gc-label">
