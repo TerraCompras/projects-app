@@ -1507,26 +1507,70 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                 </div>
               </div>
 
-              {/* Card por responsable */}
-              <div className="stat" style={{ paddingLeft: 18 }}>
-                <div className="stat-label" style={{ marginBottom: 8 }}>Tareas por responsable de ejecución</div>
+              {/* Card por responsable — tabla compacta */}
+              <div className="stat" style={{ padding: 0, overflow: "hidden" }}>
+                <div style={{ padding: "10px 14px 8px", borderBottom: "1px solid var(--border)" }}>
+                  <div className="stat-label">Tareas y subtareas por responsable</div>
+                </div>
                 {Object.keys(porResponsable).length === 0
-                  ? <div style={{ fontSize: 11, color: "var(--muted2)" }}>Sin responsables asignados</div>
-                  : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      {Object.entries(porResponsable).map(([resp, s]) => (
-                        <div key={resp} style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 0 }}>
-                          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--navy)", width: 220, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }} title={resp}>
-                            👤 {resp}
-                          </div>
-                          <div style={{ flex: 1, display: "flex", gap: 4, flexWrap: "wrap" }}>
-                            {s.pendientes  > 0 && <span className="badge b-gray">{s.pendientes} pend.</span>}
-                            {s.en_curso    > 0 && <span className="badge b-blue">{s.en_curso} en curso</span>}
-                            {s.completadas > 0 && <span className="badge b-green">{s.completadas} ok</span>}
-                            {s.atrasadas   > 0 && <span className="badge b-red">{s.atrasadas} ⚠</span>}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                  ? <div style={{ fontSize: 11, color: "var(--muted2)", padding: 14 }}>Sin responsables asignados</div>
+                  : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                      <thead>
+                        <tr style={{ background: "var(--surface2)" }}>
+                          <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 600, color: "var(--muted)", fontSize: 9, letterSpacing: .5, textTransform: "uppercase", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>Responsable</th>
+                          <th style={{ padding: "6px 8px", textAlign: "center", fontWeight: 600, color: "var(--muted)", fontSize: 9, letterSpacing: .5, textTransform: "uppercase", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }} colSpan={4}>— Tareas —</th>
+                          <th style={{ padding: "6px 8px", textAlign: "center", fontWeight: 600, color: "var(--muted)", fontSize: 9, letterSpacing: .5, textTransform: "uppercase", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap", borderLeft: "2px solid var(--border)" }} colSpan={4}>— Subtareas —</th>
+                        </tr>
+                        <tr style={{ background: "var(--surface2)" }}>
+                          <th style={{ padding: "4px 12px", borderBottom: "2px solid var(--border)" }}></th>
+                          {["Total","En curso","Complet.","Atras.","Total","En curso","Complet.","Atras."].map((h, i) => (
+                            <th key={i} style={{ padding: "4px 8px", textAlign: "center", fontWeight: 600, color: "var(--muted2)", fontSize: 9, letterSpacing: .3, textTransform: "uppercase", borderBottom: "2px solid var(--border)", whiteSpace: "nowrap", borderLeft: i === 4 ? "2px solid var(--border)" : "none" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(porResponsable).map(([resp, s], idx) => {
+                          // Calcular subtareas para este responsable
+                          const misSubs = tareas
+                            .filter(t => (t.responsable || "Sin asignar") === resp)
+                            .flatMap(t => t.subtareas || []);
+                          const sSubs = {
+                            total:      misSubs.length,
+                            en_curso:   misSubs.filter(s => (s.porcentaje_avance||0) > 0 && (s.porcentaje_avance||0) < 100).length,
+                            completadas:misSubs.filter(s => (s.porcentaje_avance||0) >= 100).length,
+                            atrasadas:  misSubs.filter(s => s.fecha_fin && s.fecha_fin < today() && (s.porcentaje_avance||0) < 100).length,
+                          };
+                          const tareaTotal = s.pendientes + s.en_curso + s.completadas + s.atrasadas;
+                          const rowBg = idx % 2 === 0 ? "#fff" : "var(--surface2)";
+                          const cell = (val, color) => (
+                            <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: val > 0 ? 700 : 400, color: val > 0 ? color : "var(--muted2)", background: rowBg }}>
+                              {val > 0 ? val : "—"}
+                            </td>
+                          );
+                          return (
+                            <tr key={resp}>
+                              <td style={{ padding: "7px 12px", fontWeight: 600, color: "var(--navy)", fontSize: 11, background: rowBg, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={resp}>
+                                👤 {resp}
+                              </td>
+                              {cell(tareaTotal, "var(--navy)")}
+                              {cell(s.en_curso, "var(--blue)")}
+                              {cell(s.completadas, "var(--accent2)")}
+                              <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: s.atrasadas > 0 ? 700 : 400, color: s.atrasadas > 0 ? "var(--danger)" : "var(--muted2)", background: rowBg }}>
+                                {s.atrasadas > 0 ? `⚠ ${s.atrasadas}` : "—"}
+                              </td>
+                              <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: sSubs.total > 0 ? 700 : 400, color: "var(--navy)", background: rowBg, borderLeft: "2px solid var(--border)" }}>
+                                {sSubs.total > 0 ? sSubs.total : "—"}
+                              </td>
+                              {cell(sSubs.en_curso, "var(--blue)")}
+                              {cell(sSubs.completadas, "var(--accent2)")}
+                              <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: sSubs.atrasadas > 0 ? 700 : 400, color: sSubs.atrasadas > 0 ? "var(--danger)" : "var(--muted2)", background: rowBg }}>
+                                {sSubs.atrasadas > 0 ? `⚠ ${sSubs.atrasadas}` : "—"}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                 }
               </div>
             </div>
