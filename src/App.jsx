@@ -1208,8 +1208,14 @@ function PageDetalle({ proyectoId, onBack, notify }) {
   const [modalTarea, setModalTarea]   = useState(null);
   const [editProyecto, setEditProyecto] = useState(false);
   const [fullscreen, setFullscreen]   = useState(null); // "gantt" | "detalle" | null
-  const [tareasOrden, setTareasOrden] = useState(null); // orden visual drag & drop
+  const [tareasOrden, setTareasOrden]       = useState(null); // orden visual drag & drop
+  const [tareasExpandidas, setTareasExpandidas] = useState({}); // id -> bool
   const dragIdx = useRef(null);
+
+  const toggleExpandir = (id, e) => {
+    e.stopPropagation();
+    setTareasExpandidas(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1372,8 +1378,20 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                     >
                       <div className="gc-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
                         <span style={{ color: "var(--muted2)", fontSize: 12, flexShrink: 0 }} title="Arrastrá para reordenar">⠿</span>
+                        {subtareas.length > 0 && (
+                          <span
+                            onClick={e => toggleExpandir(t.id, e)}
+                            title={tareasExpandidas[t.id] ? "Contraer subtareas" : "Expandir subtareas"}
+                            style={{ color: "var(--blue)", fontSize: 10, cursor: "pointer", flexShrink: 0, userSelect: "none", padding: "0 2px" }}
+                          >
+                            {tareasExpandidas[t.id] ? "▼" : "▶"}
+                          </span>
+                        )}
                         <div>
-                          <div className="gc-name">{t.nombre}{criticas.has(t.id) && <span className="cc-badge">CC</span>}</div>
+                          <div className="gc-name">
+                            {t.nombre}{criticas.has(t.id) && <span className="cc-badge">CC</span>}
+                            {subtareas.length > 0 && <span style={{ marginLeft: 6, fontSize: 9, color: "var(--muted2)", fontFamily: "var(--mono)" }}>{subtareas.length} sub</span>}
+                          </div>
                           <div className="gc-sub">{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
                         </div>
                       </div>
@@ -1384,8 +1402,8 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                         }
                       </div>
                     </div>
-                    {/* ── Filas subtareas ── */}
-                    {subtareas.map(s => {
+                    {/* ── Filas subtareas (solo si expandida) ── */}
+                    {tareasExpandidas[t.id] && subtareas.map(s => {
                       const sLeft  = s.fecha_inicio && minFecha ? (diffDays(minFecha, s.fecha_inicio) / totalDias) * 100 : null;
                       const sWidth = s.fecha_inicio && s.fecha_fin ? Math.max((diffDays(s.fecha_inicio, s.fecha_fin) / totalDias) * 100, 1) : null;
                       const sStyle = sLeft !== null && sWidth !== null ? { left: `${sLeft}%`, width: `${sWidth}%` } : null;
