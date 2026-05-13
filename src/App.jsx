@@ -1571,7 +1571,6 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                 }
               </div>
             </div>
-            </div>
           </>
         );
       })()}
