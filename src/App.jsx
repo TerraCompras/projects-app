@@ -1483,7 +1483,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
             </div>
 
             {/* Fila 2: subtareas + responsables */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 12, marginBottom: 18 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 12, marginBottom: 18 }}>
               {/* Card subtareas */}
               <div className="stat" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 <div className="stat-label">Subtareas — {todasSubtareas.length} total</div>
