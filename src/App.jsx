@@ -607,6 +607,8 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar }) 
     porcentaje_avance: 0, status: "pendiente", notas: "", dias_habiles: [...DIAS_DEFAULT],
     ...(tarea || {}),
     dias_habiles: parseDias(tarea?.dias_habiles),
+    duracion_dias: parseInt(tarea?.duracion_dias) || 1,
+    porcentaje_avance: parseInt(tarea?.porcentaje_avance) || 0,
   });
   const [perfiles, setPerfiles]         = useState([]);
   const [subtareas, setSubtareas]       = useState([]);
