@@ -1176,6 +1176,127 @@ function AdjuntosPanel({ proyectoId, tareaId = null, notify }) {
   );
 }
 
+// ─── TAB ADJUNTOS DE TAREAS ──────────────────────────────────────────────────
+function AdjuntosTareasTab({ proyectoId, tareas, notify }) {
+  const [adjuntos, setAdjuntos] = useState([]);
+  const [subtareasMap, setSubtareasMap] = useState({}); // tareaId -> subtareas
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const cargar = async () => {
+      setLoading(true);
+      try {
+        // Cargar todos los adjuntos del proyecto
+        const data = await api.getAdjuntos(proyectoId);
+        setAdjuntos(data);
+        // Cargar subtareas de todas las tareas
+        const subs = {};
+        await Promise.all(tareas.map(async t => {
+          const s = await api.getSubtareas(t.id);
+          subs[t.id] = s;
+        }));
+        setSubtareasMap(subs);
+      } finally { setLoading(false); }
+    };
+    cargar();
+  }, [proyectoId, tareas]);
+
+  if (loading) return <div className="loading"><span className="spin">◌</span></div>;
+
+  const adjPorTarea   = (tareaId) => adjuntos.filter(a => a.tarea_id === tareaId);
+  const adjPorSub     = (subId)   => adjuntos.filter(a => a.tarea_id === subId);
+  const tareasConAdj  = tareas.filter(t => adjPorTarea(t.id).length > 0 || (subtareasMap[t.id] || []).some(s => adjPorSub(s.id).length > 0));
+
+  if (tareasConAdj.length === 0) return (
+    <div className="empty-state">
+      <div style={{ fontSize: 28, marginBottom: 8 }}>📋</div>
+      <div>Sin adjuntos en tareas ni subtareas</div>
+      <div style={{ fontSize: 11, color: "var(--muted2)", marginTop: 4 }}>Los adjuntos se agregan desde el modal de cada tarea → tab Adjuntos</div>
+    </div>
+  );
+
+  return (
+    <div>
+      {tareasConAdj.map(t => {
+        const adjsTarea = adjPorTarea(t.id);
+        const subs = (subtareasMap[t.id] || []).filter(s => adjPorSub(s.id).length > 0);
+        return (
+          <div key={t.id} className="card" style={{ marginBottom: 12 }}>
+            {/* ── Header tarea ── */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: adjsTarea.length > 0 || subs.length > 0 ? 12 : 0 }}>
+              <span style={{ fontSize: 13 }}>📋</span>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--navy)" }}>{t.nombre}</div>
+                <div style={{ fontSize: 10, color: "var(--muted)" }}>
+                  {t.owner && `🎯 ${t.owner}`}{t.responsable && ` · 👤 ${t.responsable}`}
+                  {t.fecha_inicio && ` · ${fmtDate(t.fecha_inicio)} → ${fmtDate(t.fecha_fin)}`}
+                </div>
+              </div>
+            </div>
+
+            {/* ── Adjuntos de la tarea ── */}
+            {adjsTarea.length > 0 && (
+              <div style={{ marginBottom: subs.length > 0 ? 12 : 0 }}>
+                {adjsTarea.map(adj => (
+                  <AdjuntoFila key={adj.id} adj={adj} proyectoId={proyectoId} notify={notify} onEliminar={() => setAdjuntos(prev => prev.filter(a => a.id !== adj.id))} />
+                ))}
+              </div>
+            )}
+
+            {/* ── Subtareas con adjuntos ── */}
+            {subs.map(s => (
+              <div key={s.id} style={{ marginLeft: 20, borderLeft: "2px solid var(--border)", paddingLeft: 12, marginBottom: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, color: "var(--muted)" }}>↳</span>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "var(--mid)" }}>{s.descripcion}</div>
+                    {s.responsable && <div style={{ fontSize: 10, color: "var(--muted2)" }}>👤 {s.responsable}</div>}
+                  </div>
+                </div>
+                {adjPorSub(s.id).map(adj => (
+                  <AdjuntoFila key={adj.id} adj={adj} proyectoId={proyectoId} notify={notify} onEliminar={() => setAdjuntos(prev => prev.filter(a => a.id !== adj.id))} />
+                ))}
+              </div>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Fila de adjunto reutilizable con eliminar
+function AdjuntoFila({ adj, proyectoId, notify, onEliminar }) {
+  const [eliminando, setEliminando] = useState(false);
+  const handleEliminar = async () => {
+    if (!window.confirm(`¿Eliminar "${adj.nombre}"?`)) return;
+    setEliminando(true);
+    try {
+      await api.eliminarAdjunto(adj.id, adj.url);
+      notify("Adjunto eliminado", "warn");
+      onEliminar();
+    } catch (e) { notify("Error: " + e.message, "error"); }
+    finally { setEliminando(false); }
+  };
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: "var(--r)", marginBottom: 5 }}>
+      <FileIcon tipo={adj.tipo} nombre={adj.nombre} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <a href={adj.url} target="_blank" rel="noreferrer"
+          style={{ fontSize: 12, fontWeight: 600, color: "var(--blue)", textDecoration: "none", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {adj.nombre}
+        </a>
+        <div style={{ fontSize: 10, color: "var(--muted2)" }}>{fmtTamanio(adj.tamanio)}{adj.created_at ? " · " + fmtDate(adj.created_at.slice(0,10)) : ""}</div>
+      </div>
+      <button onClick={handleEliminar} disabled={eliminando}
+        style={{ background: "none", border: "none", color: "var(--muted2)", cursor: "pointer", fontSize: 14, padding: "2px 6px", borderRadius: 4 }}
+        onMouseEnter={e => e.currentTarget.style.color = "var(--danger)"}
+        onMouseLeave={e => e.currentTarget.style.color = "var(--muted2)"}
+      >{eliminando ? "..." : "✕"}</button>
+    </div>
+  );
+}
+
 // ─── FULLSCREEN WRAPPER ───────────────────────────────────────────────────────
 function FullscreenWrapper({ title, onClose, children }) {
   // Bloquear scroll del body
@@ -1339,7 +1460,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
       </div>
 
       <div className="tabs-row" style={{ alignItems: "center" }}>
-        {[{ id: "gantt", label: "Gantt" }, { id: "lista", label: "Lista de tareas" }, { id: "critico", label: "Camino crítico" }, { id: "adjuntos", label: "📎 Adjuntos" }].map(t => (
+        {[{ id: "gantt", label: "Gantt" }, { id: "lista", label: "Lista de tareas" }, { id: "critico", label: "Camino crítico" }, { id: "adjuntos", label: "📎 Adjuntos" }, { id: "adjuntos_tareas", label: "📋 Adjuntos de tareas" }].map(t => (
           <div key={t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</div>
         ))}
         {tab === "gantt" && (
@@ -1514,6 +1635,10 @@ function PageDetalle({ proyectoId, onBack, notify }) {
           <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", letterSpacing: 1, textTransform: "uppercase", marginBottom: 14 }}>Adjuntos del proyecto</div>
           <AdjuntosPanel proyectoId={proyectoId} notify={notify} />
         </div>
+      )}
+
+      {tab === "adjuntos_tareas" && (
+        <AdjuntosTareasTab proyectoId={proyectoId} tareas={tareas} notify={notify} />
       )}
 
       {modalTarea !== null && (
