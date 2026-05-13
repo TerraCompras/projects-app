@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "./lib/supabase";
 
 const PORTAL_URL = "https://erp-portal-fawn.vercel.app";
@@ -226,14 +226,23 @@ const api = {
     if (filtros.status)  q = q.eq("status",  filtros.status);
     const { data, error } = await q;
     if (error) throw error;
-    // Cargar contactos por separado para evitar problemas de schema cache
     const proyectos = data || [];
     if (proyectos.length) {
       const ids = proyectos.map(p => p.id);
+      // Cargar contactos por separado
       const { data: contactos } = await supabase.from("proyecto_contactos").select("*").in("proyecto_id", ids);
       if (contactos) {
         proyectos.forEach(p => {
           p.proyecto_contactos = contactos.filter(c => c.proyecto_id === p.id);
+        });
+      }
+      // Cargar subtareas por separado
+      const { data: subtareas } = await supabase.from("proyecto_subtareas").select("*").in("proyecto_id", ids).order("fecha_inicio", { ascending: true });
+      if (subtareas) {
+        proyectos.forEach(p => {
+          (p.proyecto_tareas || []).forEach(t => {
+            t.subtareas = subtareas.filter(s => s.tarea_id === t.id);
+          });
         });
       }
     }
@@ -615,7 +624,7 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar }) 
   const [saving, setSaving]             = useState(false);
   const [savingSubtarea, setSavingSubtarea] = useState(false);
   const [confirmEliminar, setConfirmEliminar] = useState(false);
-  const [tabModal, setTabModal]         = useState("datos");
+  const [tabModal, setTabModal]         = useState(tarea?._openSubtarea ? "subtareas" : "datos");
   const [editSubtareaId, setEditSubtareaId] = useState(null);
   const [subForm, setSubForm]           = useState({ descripcion: "", fecha_inicio: "", fecha_fin: "", porcentaje_avance: 0, responsable: "" });
 
@@ -624,7 +633,17 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar }) 
 
   useEffect(() => {
     api.getPerfiles().then(setPerfiles);
-    if (tarea?.id) api.getSubtareas(tarea.id).then(setSubtareas);
+    if (tarea?.id) {
+      api.getSubtareas(tarea.id).then(subs => {
+        setSubtareas(subs);
+        // Si se abrió desde el gantt con una subtarea específica, pre-cargar para editar
+        if (tarea._openSubtarea) {
+          const s = tarea._openSubtarea;
+          setEditSubtareaId(s.id);
+          setSubForm({ descripcion: s.descripcion, fecha_inicio: s.fecha_inicio || "", fecha_fin: s.fecha_fin || "", porcentaje_avance: s.porcentaje_avance || 0, responsable: s.responsable || "" });
+        }
+      });
+    }
   }, [tarea?.id]);
 
   // Bloquear cierre accidental con Escape o Delete fuera de inputs
@@ -1338,31 +1357,59 @@ function PageDetalle({ proyectoId, onBack, notify }) {
             ? <div className="empty-state">Sin tareas — usá "+ Nueva tarea" para empezar</div>
             : tareasOrdenadas.map((t, i) => {
                 const barStyle = getBarStyle(t);
+                const subtareas = t.subtareas || [];
                 return (
-                  <div
-                    key={t.id}
-                    className="gantt-row"
-                    style={{ gridTemplateColumns: cols, cursor: "grab" }}
-                    draggable
-                    onDragStart={() => handleDragStart(i)}
-                    onDragOver={e => handleDragOver(e, i)}
-                    onDragEnd={handleDragEnd}
-                    onClick={() => setModalTarea(t)}
-                  >
-                    <div className="gc-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ color: "var(--muted2)", fontSize: 12, flexShrink: 0 }} title="Arrastrá para reordenar">⠿</span>
-                      <div>
-                        <div className="gc-name">{t.nombre}{criticas.has(t.id) && <span className="cc-badge">CC</span>}</div>
-                        <div className="gc-sub">{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
+                  <React.Fragment key={t.id}>
+                    {/* ── Fila tarea madre ── */}
+                    <div
+                      className="gantt-row"
+                      style={{ gridTemplateColumns: cols, cursor: "grab" }}
+                      draggable
+                      onDragStart={() => handleDragStart(i)}
+                      onDragOver={e => handleDragOver(e, i)}
+                      onDragEnd={handleDragEnd}
+                      onClick={() => setModalTarea(t)}
+                    >
+                      <div className="gc-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ color: "var(--muted2)", fontSize: 12, flexShrink: 0 }} title="Arrastrá para reordenar">⠿</span>
+                        <div>
+                          <div className="gc-name">{t.nombre}{criticas.has(t.id) && <span className="cc-badge">CC</span>}</div>
+                          <div className="gc-sub">{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
+                        </div>
+                      </div>
+                      <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}` }}>
+                        {barStyle
+                          ? <div className={`bar ${getBarClass(t)}`} style={barStyle}>{t.nombre}</div>
+                          : <div style={{ fontSize: 10, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>
+                        }
                       </div>
                     </div>
-                    <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}` }}>
-                      {barStyle
-                        ? <div className={`bar ${getBarClass(t)}`} style={barStyle}>{t.nombre}</div>
-                        : <div style={{ fontSize: 10, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>
-                      }
-                    </div>
-                  </div>
+                    {/* ── Filas subtareas ── */}
+                    {subtareas.map(s => {
+                      const sLeft  = s.fecha_inicio && minFecha ? (diffDays(minFecha, s.fecha_inicio) / totalDias) * 100 : null;
+                      const sWidth = s.fecha_inicio && s.fecha_fin ? Math.max((diffDays(s.fecha_inicio, s.fecha_fin) / totalDias) * 100, 1) : null;
+                      const sStyle = sLeft !== null && sWidth !== null ? { left: `${sLeft}%`, width: `${sWidth}%` } : null;
+                      return (
+                        <div
+                          key={s.id}
+                          className="gantt-row"
+                          style={{ gridTemplateColumns: cols, background: "var(--surface2)", cursor: "pointer" }}
+                          onClick={e => { e.stopPropagation(); setModalTarea({ ...t, _openSubtarea: s }); }}
+                        >
+                          <div className="gc-label" style={{ paddingLeft: 32 }}>
+                            <div style={{ fontSize: 10, fontWeight: 600, color: "var(--mid)" }}>↳ {s.descripcion}</div>
+                            <div style={{ fontSize: 9, color: "var(--muted2)" }}>{s.responsable || "—"} · {s.porcentaje_avance || 0}%</div>
+                          </div>
+                          <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}` }}>
+                            {sStyle
+                              ? <div style={{ ...sStyle, position: "absolute", height: 10, borderRadius: 3, background: s.porcentaje_avance >= 100 ? "var(--accent2)" : "var(--mid)", opacity: 0.8, display: "flex", alignItems: "center", padding: "0 4px" }} />
+                              : <div style={{ fontSize: 9, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>
+                            }
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </React.Fragment>
                 );
               })
           }
