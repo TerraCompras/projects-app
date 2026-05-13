@@ -460,7 +460,7 @@ function ProyectoModal({ proyecto, onClose, onSave }) {
   };
 
   return (
-    <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="overlay">
       <div className="modal">
         <div className="mhdr">
           <div className="mtitle">{proyecto ? "Editar proyecto" : "Nuevo proyecto"}</div>
@@ -615,6 +615,20 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar }) 
     if (tarea?.id) api.getSubtareas(tarea.id).then(setSubtareas);
   }, [tarea?.id]);
 
+  // Bloquear cierre accidental con Escape o Delete fuera de inputs
+  useEffect(() => {
+    const handler = (e) => {
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      const enInput = ["input", "textarea", "select"].includes(tag);
+      if ((e.key === "Escape" || e.key === "Delete") && !enInput) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    };
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, []);
+
   useEffect(() => {
     const fin = calcFechaFin(form.fecha_inicio, form.duracion_dias, form.dias_habiles);
     if (fin) set("fecha_fin", fin);
@@ -678,7 +692,7 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar }) 
   const inStyle = { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r)", color: "var(--text)", fontFamily: "var(--sans)", fontSize: 12, padding: "6px 10px", outline: "none", width: "100%" };
 
   return (
-    <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+    <div className="overlay">
       <div className="modal">
         <div className="mhdr">
           <div className="mtitle">{tarea?.id ? "Editar tarea" : "Nueva tarea"}</div>
