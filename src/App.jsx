@@ -1482,35 +1482,32 @@ function PageDetalle({ proyectoId, onBack, notify }) {
               <div className="stat"><div className="stat-label">Camino crítico</div><div className="stat-value" style={{ color: "var(--warn)" }}>{criticas.size}</div></div>
             </div>
 
-            {/* Fila 2: subtareas + responsables */}
-            <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 12, marginBottom: 18 }}>
-              {/* Card subtareas */}
-              <div className="stat" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <div className="stat-label">Subtareas — {todasSubtareas.length} total</div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
-                    <div style={{ fontFamily: "var(--mono)", fontSize: 22, fontWeight: 700, color: "var(--muted)" }}>{subPendientes}</div>
-                    <div style={{ fontSize: 9, color: "var(--muted2)", textTransform: "uppercase", letterSpacing: .5 }}>Pendientes</div>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
-                    <div style={{ fontFamily: "var(--mono)", fontSize: 22, fontWeight: 700, color: "var(--blue)" }}>{subEnCurso}</div>
-                    <div style={{ fontSize: 9, color: "var(--muted2)", textTransform: "uppercase", letterSpacing: .5 }}>En curso</div>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
-                    <div style={{ fontFamily: "var(--mono)", fontSize: 22, fontWeight: 700, color: "var(--accent2)" }}>{subCompletadas}</div>
-                    <div style={{ fontSize: 9, color: "var(--muted2)", textTransform: "uppercase", letterSpacing: .5 }}>Completas</div>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
-                    <div style={{ fontFamily: "var(--mono)", fontSize: 22, fontWeight: 700, color: "var(--danger)" }}>{subAtrasadas}</div>
-                    <div style={{ fontSize: 9, color: "var(--muted2)", textTransform: "uppercase", letterSpacing: .5 }}>Atrasadas</div>
-                  </div>
-                </div>
+            {/* Fila 2: subtareas full width */}
+            <div className="stats" style={{ marginBottom: 12 }}>
+              <div className="stat">
+                <div className="stat-label">Subtareas total</div>
+                <div className="stat-value" style={{ color: "var(--navy)" }}>{todasSubtareas.length}</div>
               </div>
+              <div className="stat">
+                <div className="stat-label">Pendientes</div>
+                <div className="stat-value" style={{ color: "var(--muted)" }}>{subPendientes}</div>
+              </div>
+              <div className="stat">
+                <div className="stat-label">En curso</div>
+                <div className="stat-value" style={{ color: "var(--blue)" }}>{subEnCurso}</div>
+              </div>
+              <div className="stat">
+                <div className="stat-label">Completadas</div>
+                <div className="stat-value" style={{ color: "var(--accent2)" }}>{subCompletadas}</div>
+              </div>
+            </div>
 
-              {/* Card por responsable — tabla compacta */}
-              <div className="stat" style={{ padding: 0, overflow: "hidden" }}>
-                <div style={{ padding: "10px 14px 8px", borderBottom: "1px solid var(--border)" }}>
-                  <div className="stat-label">Tareas y subtareas por responsable</div>
+            {/* Fila 3: tabla responsables full width */}
+            <div style={{ marginBottom: 18 }}>
+              <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+
+                <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", background: "var(--surface2)" }}>
+                  <div className="stat-label">Tareas y subtareas por responsable de ejecución</div>
                 </div>
                 {Object.keys(porResponsable).length === 0
                   ? <div style={{ fontSize: 11, color: "var(--muted2)", padding: 14 }}>Sin responsables asignados</div>
@@ -1573,6 +1570,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                     </table>
                 }
               </div>
+            </div>
             </div>
           </>
         );
@@ -1839,13 +1837,25 @@ function PageDetalle({ proyectoId, onBack, notify }) {
             </div>
             <div className="mt8"><PctBar pct={pct} /></div>
           </div>
-          {/* Stats */}
+          {/* Stats fila 1 */}
           <div className="stats mb12">
             <div className="stat"><div className="stat-label">Tareas</div><div className="stat-value" style={{ color: "var(--blue)" }}>{tareas.length}</div></div>
             <div className="stat"><div className="stat-label">Completadas</div><div className="stat-value" style={{ color: "var(--accent2)" }}>{tareas.filter(t => t.porcentaje_avance >= 100).length}</div></div>
             <div className="stat"><div className="stat-label">Atrasadas</div><div className="stat-value" style={{ color: "var(--danger)" }}>{atrasadas.length}</div></div>
             <div className="stat"><div className="stat-label">Camino crítico</div><div className="stat-value" style={{ color: "var(--warn)" }}>{criticas.size}</div></div>
           </div>
+          {/* Stats fila 2: subtareas */}
+          {(() => {
+            const todasSubs = tareas.flatMap(t => t.subtareas || []);
+            return (
+              <div className="stats mb12">
+                <div className="stat"><div className="stat-label">Subtareas total</div><div className="stat-value" style={{ color: "var(--navy)" }}>{todasSubs.length}</div></div>
+                <div className="stat"><div className="stat-label">Pendientes</div><div className="stat-value" style={{ color: "var(--muted)" }}>{todasSubs.filter(s => (s.porcentaje_avance||0) === 0).length}</div></div>
+                <div className="stat"><div className="stat-label">En curso</div><div className="stat-value" style={{ color: "var(--blue)" }}>{todasSubs.filter(s => (s.porcentaje_avance||0) > 0 && (s.porcentaje_avance||0) < 100).length}</div></div>
+                <div className="stat"><div className="stat-label">Completadas</div><div className="stat-value" style={{ color: "var(--accent2)" }}>{todasSubs.filter(s => (s.porcentaje_avance||0) >= 100).length}</div></div>
+              </div>
+            );
+          })()}
           {/* Gantt */}
           <div className="card" style={{ padding: 0, overflow: "hidden" }}>
             <div style={{ padding: "12px 16px", background: "var(--surface2)", borderBottom: "1px solid var(--border)", fontSize: 11, fontWeight: 700, color: "var(--muted)", letterSpacing: 1, textTransform: "uppercase" }}>Gantt</div>
