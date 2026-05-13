@@ -1369,7 +1369,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                     {/* ── Fila tarea madre ── */}
                     <div
                       className="gantt-row"
-                      style={{ gridTemplateColumns: cols, cursor: "grab", background: "#FFFFFF", borderLeft: "4px solid var(--blue)" }}
+                      style={{ gridTemplateColumns: cols, cursor: "grab", background: "#213363" }}
                       draggable
                       onDragStart={() => handleDragStart(i)}
                       onDragOver={e => handleDragOver(e, i)}
@@ -1377,22 +1377,22 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                       onClick={() => setModalTarea(t)}
                     >
                       <div className="gc-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ color: "var(--muted2)", fontSize: 12, flexShrink: 0 }} title="Arrastrá para reordenar">⠿</span>
+                        <span style={{ color: "rgba(255,255,255,.4)", fontSize: 12, flexShrink: 0 }} title="Arrastrá para reordenar">⠿</span>
                         {subtareas.length > 0 && (
                           <span
                             onClick={e => toggleExpandir(t.id, e)}
                             title={tareasExpandidas[t.id] ? "Contraer subtareas" : "Expandir subtareas"}
-                            style={{ color: "var(--blue)", fontSize: 10, cursor: "pointer", flexShrink: 0, userSelect: "none", padding: "0 2px" }}
+                            style={{ color: "rgba(255,255,255,.8)", fontSize: 10, cursor: "pointer", flexShrink: 0, userSelect: "none", padding: "0 2px" }}
                           >
                             {tareasExpandidas[t.id] ? "▼" : "▶"}
                           </span>
                         )}
                         <div>
-                          <div className="gc-name">
+                          <div style={{ fontSize: 11, fontWeight: 600, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {t.nombre}{criticas.has(t.id) && <span className="cc-badge">CC</span>}
-                            {subtareas.length > 0 && <span style={{ marginLeft: 6, fontSize: 9, color: "var(--muted2)", fontFamily: "var(--mono)" }}>{subtareas.length} sub</span>}
+                            {subtareas.length > 0 && <span style={{ marginLeft: 6, fontSize: 9, color: "rgba(255,255,255,.5)", fontFamily: "var(--mono)" }}>{subtareas.length} sub</span>}
                           </div>
-                          <div className="gc-sub">{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
+                          <div style={{ fontSize: 9, color: "rgba(255,255,255,.6)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
                         </div>
                       </div>
                       <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}` }}>
@@ -1411,7 +1411,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                         <div
                           key={s.id}
                           className="gantt-row"
-                          style={{ gridTemplateColumns: cols, background: "#E8ECF0", borderLeft: "4px solid #A5B5CC", cursor: "pointer" }}
+                          style={{ gridTemplateColumns: cols, background: "#F0F4F8", cursor: "pointer" }}
                           onClick={e => { e.stopPropagation(); setModalTarea({ ...t, _openSubtarea: s }); }}
                         >
                           <div className="gc-label">
