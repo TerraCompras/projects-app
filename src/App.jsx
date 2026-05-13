@@ -320,9 +320,14 @@ const api = {
     return data || [];
   },
   async subirAdjunto(file, proyectoId, tareaId = null) {
-    const ext = file.name.split(".").pop();
-    const path = `proyectos/${proyectoId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-    const { error: errUp } = await supabase.storage.from("proyecto-adjuntos").upload(path, file, { upsert: true });
+    const ext = file.name.split(".").pop() || "bin";
+    const nombreLimpio = file.name
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // quitar acentos
+      .replace(/[^a-zA-Z0-9._-]/g, "_")                  // reemplazar especiales
+      .replace(/_+/g, "_")                                // colapsar underscores
+      .substring(0, 80);                                  // limitar largo
+    const path = `proyectos/${proyectoId}/${Date.now()}_${nombreLimpio}`;
+    const { error: errUp } = await supabase.storage.from("proyecto-adjuntos").upload(path, file, { upsert: true, contentType: file.type || "application/octet-stream" });
     if (errUp) throw errUp;
     const { data: urlData } = supabase.storage.from("proyecto-adjuntos").getPublicUrl(path);
     const adjunto = {
