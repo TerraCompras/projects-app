@@ -1950,7 +1950,7 @@ export default function App() {
             <div className="ni back" onClick={() => window.open(PORTAL_URL, "_self")}>
               <span className="ni-icon">←</span><span>Volver al portal</span>
             </div>
-            <div style={{ fontSize: 9, color: "rgba(255,255,255,.3)", fontFamily: "var(--mono)", letterSpacing: 1, marginTop: 8 }}>PROJECTS v1.1</div>
+            <div style={{ fontSize: 9, color: "rgba(255,255,255,.3)", fontFamily: "var(--mono)", letterSpacing: 1, marginTop: 8 }}>PROJECTS v1.2</div>
           </div>
         </nav>
 
