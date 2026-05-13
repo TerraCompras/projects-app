@@ -1355,7 +1355,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
       {tab === "gantt" && (
         <div className="gantt-wrap" style={{ overflowX: "auto" }}>
           <div className="gantt-header" style={{ gridTemplateColumns: cols }}>
-            <div className="gh-cell" style={{ textAlign: "left", borderRight: "1px solid var(--border)" }}>Tarea</div>
+            <div className="gh-cell" style={{ textAlign: "center", borderRight: "1px solid var(--border)" }}>Tarea</div>
             {meses.map((m, i) => <div key={i} className="gh-cell">{m}</div>)}
             {meses.length === 0 && <div className="gh-cell">Línea de tiempo</div>}
           </div>
@@ -1376,24 +1376,27 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                       onDragEnd={handleDragEnd}
                       onClick={() => setModalTarea(t)}
                     >
-                      <div className="gc-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ color: "var(--muted)", fontSize: 12, flexShrink: 0 }} title="Arrastrá para reordenar">⠿</span>
-                        {subtareas.length > 0 && (
-                          <span
-                            onClick={e => toggleExpandir(t.id, e)}
-                            title={tareasExpandidas[t.id] ? "Contraer subtareas" : "Expandir subtareas"}
-                            style={{ color: "var(--blue)", fontSize: 10, cursor: "pointer", flexShrink: 0, userSelect: "none", padding: "0 2px" }}
-                          >
-                            {tareasExpandidas[t.id] ? "▼" : "▶"}
-                          </span>
-                        )}
-                        <div>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--navy)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {t.nombre}{criticas.has(t.id) && <span className="cc-badge">CC</span>}
-                            {subtareas.length > 0 && <span style={{ marginLeft: 6, fontSize: 9, color: "var(--muted)", fontFamily: "var(--mono)" }}>{subtareas.length} sub</span>}
-                          </div>
-                          <div style={{ fontSize: 9, color: "var(--muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
+                      <div className="gc-label">
+                        {/* Fila superior: drag + expand en la misma línea */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4 }}>
+                          <span style={{ color: "var(--muted)", fontSize: 12, flexShrink: 0 }} title="Arrastrá para reordenar">⠿</span>
+                          {subtareas.length > 0 && (
+                            <span
+                              onClick={e => toggleExpandir(t.id, e)}
+                              title={tareasExpandidas[t.id] ? "Contraer subtareas" : "Expandir subtareas"}
+                              style={{ color: "var(--blue)", fontSize: 10, cursor: "pointer", flexShrink: 0, userSelect: "none" }}
+                            >
+                              {tareasExpandidas[t.id] ? "▼" : "▶"}
+                            </span>
+                          )}
+                          {subtareas.length > 0 && <span style={{ fontSize: 9, color: "var(--muted)", fontFamily: "var(--mono)" }}>{subtareas.length} sub</span>}
+                          {criticas.has(t.id) && <span className="cc-badge">CC</span>}
                         </div>
+                        {/* Nombre con wrap */}
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--navy)", lineHeight: 1.3, wordBreak: "break-word" }}>
+                          {t.nombre}
+                        </div>
+                        <div style={{ fontSize: 9, color: "var(--muted)", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
                       </div>
                       <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}`, background: "#fff" }}>
                         {barStyle
@@ -1536,7 +1539,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
         <FullscreenWrapper title={`Gantt — ${proyecto.nombre}`} onClose={() => setFullscreen(null)}>
           <div className="gantt-wrap" style={{ overflowX: "auto" }}>
             <div className="gantt-header" style={{ gridTemplateColumns: cols }}>
-              <div className="gh-cell" style={{ textAlign: "left", borderRight: "1px solid var(--border)" }}>Tarea</div>
+              <div className="gh-cell" style={{ textAlign: "center", borderRight: "1px solid var(--border)" }}>Tarea</div>
               {meses.map((m, i) => <div key={i} className="gh-cell">{m}</div>)}
               {meses.length === 0 && <div className="gh-cell">Línea de tiempo</div>}
             </div>
@@ -1604,7 +1607,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
             <div style={{ padding: "12px 16px", background: "var(--surface2)", borderBottom: "1px solid var(--border)", fontSize: 11, fontWeight: 700, color: "var(--muted)", letterSpacing: 1, textTransform: "uppercase" }}>Gantt</div>
             <div className="gantt-wrap" style={{ overflowX: "auto" }}>
               <div className="gantt-header" style={{ gridTemplateColumns: cols }}>
-                <div className="gh-cell" style={{ textAlign: "left", borderRight: "1px solid var(--border)" }}>Tarea</div>
+                <div className="gh-cell" style={{ textAlign: "center", borderRight: "1px solid var(--border)" }}>Tarea</div>
                 {meses.map((m, i) => <div key={i} className="gh-cell">{m}</div>)}
                 {meses.length === 0 && <div className="gh-cell">Línea de tiempo</div>}
               </div>
