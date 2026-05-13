@@ -1452,12 +1452,87 @@ function PageDetalle({ proyectoId, onBack, notify }) {
         <div className="mt8"><PctBar pct={pct} /></div>
       </div>
 
-      <div className="stats">
-        <div className="stat"><div className="stat-label">Tareas</div><div className="stat-value" style={{ color: "var(--blue)" }}>{tareas.length}</div></div>
-        <div className="stat"><div className="stat-label">Completadas</div><div className="stat-value" style={{ color: "var(--accent2)" }}>{tareas.filter(t => t.porcentaje_avance >= 100).length}</div></div>
-        <div className="stat"><div className="stat-label">Atrasadas</div><div className="stat-value" style={{ color: "var(--danger)" }}>{atrasadas.length}</div></div>
-        <div className="stat"><div className="stat-label">Camino crítico</div><div className="stat-value" style={{ color: "var(--warn)" }}>{criticas.size}</div></div>
-      </div>
+      {(() => {
+        // Calcular subtareas y stats por responsable
+        const todasSubtareas = tareas.flatMap(t => t.subtareas || []);
+        const subPendientes  = todasSubtareas.filter(s => (s.porcentaje_avance || 0) === 0).length;
+        const subEnCurso     = todasSubtareas.filter(s => (s.porcentaje_avance || 0) > 0 && (s.porcentaje_avance || 0) < 100).length;
+        const subCompletadas = todasSubtareas.filter(s => (s.porcentaje_avance || 0) >= 100).length;
+        const subAtrasadas   = todasSubtareas.filter(s => s.fecha_fin && s.fecha_fin < today() && (s.porcentaje_avance || 0) < 100).length;
+
+        // Agrupar tareas por responsable
+        const porResponsable = {};
+        tareas.forEach(t => {
+          const r = t.responsable || "Sin asignar";
+          if (!porResponsable[r]) porResponsable[r] = { pendientes: 0, en_curso: 0, completadas: 0, atrasadas: 0 };
+          const esAtrasada = t.fecha_fin && t.fecha_fin < today() && (t.porcentaje_avance || 0) < 100;
+          if ((t.porcentaje_avance || 0) >= 100)     porResponsable[r].completadas++;
+          else if (esAtrasada)                        porResponsable[r].atrasadas++;
+          else if ((t.porcentaje_avance || 0) > 0)   porResponsable[r].en_curso++;
+          else                                        porResponsable[r].pendientes++;
+        });
+
+        return (
+          <>
+            {/* Fila 1: stats principales */}
+            <div className="stats">
+              <div className="stat"><div className="stat-label">Tareas</div><div className="stat-value" style={{ color: "var(--blue)" }}>{tareas.length}</div></div>
+              <div className="stat"><div className="stat-label">Completadas</div><div className="stat-value" style={{ color: "var(--accent2)" }}>{tareas.filter(t => t.porcentaje_avance >= 100).length}</div></div>
+              <div className="stat"><div className="stat-label">Atrasadas</div><div className="stat-value" style={{ color: "var(--danger)" }}>{atrasadas.length}</div></div>
+              <div className="stat"><div className="stat-label">Camino crítico</div><div className="stat-value" style={{ color: "var(--warn)" }}>{criticas.size}</div></div>
+            </div>
+
+            {/* Fila 2: subtareas + responsables */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 12, marginBottom: 18 }}>
+              {/* Card subtareas */}
+              <div className="stat" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div className="stat-label">Subtareas — {todasSubtareas.length} total</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
+                    <div style={{ fontFamily: "var(--mono)", fontSize: 22, fontWeight: 700, color: "var(--muted)" }}>{subPendientes}</div>
+                    <div style={{ fontSize: 9, color: "var(--muted2)", textTransform: "uppercase", letterSpacing: .5 }}>Pendientes</div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
+                    <div style={{ fontFamily: "var(--mono)", fontSize: 22, fontWeight: 700, color: "var(--blue)" }}>{subEnCurso}</div>
+                    <div style={{ fontSize: 9, color: "var(--muted2)", textTransform: "uppercase", letterSpacing: .5 }}>En curso</div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
+                    <div style={{ fontFamily: "var(--mono)", fontSize: 22, fontWeight: 700, color: "var(--accent2)" }}>{subCompletadas}</div>
+                    <div style={{ fontSize: 9, color: "var(--muted2)", textTransform: "uppercase", letterSpacing: .5 }}>Completas</div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
+                    <div style={{ fontFamily: "var(--mono)", fontSize: 22, fontWeight: 700, color: "var(--danger)" }}>{subAtrasadas}</div>
+                    <div style={{ fontSize: 9, color: "var(--muted2)", textTransform: "uppercase", letterSpacing: .5 }}>Atrasadas</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card por responsable */}
+              <div className="stat">
+                <div className="stat-label" style={{ marginBottom: 8 }}>Tareas por responsable de ejecución</div>
+                {Object.keys(porResponsable).length === 0
+                  ? <div style={{ fontSize: 11, color: "var(--muted2)" }}>Sin responsables asignados</div>
+                  : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {Object.entries(porResponsable).map(([resp, s]) => (
+                        <div key={resp} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--navy)", minWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={resp}>
+                            👤 {resp}
+                          </div>
+                          <div style={{ flex: 1, display: "flex", gap: 4, flexWrap: "wrap" }}>
+                            {s.pendientes  > 0 && <span className="badge b-gray">{s.pendientes} pend.</span>}
+                            {s.en_curso    > 0 && <span className="badge b-blue">{s.en_curso} en curso</span>}
+                            {s.completadas > 0 && <span className="badge b-green">{s.completadas} ok</span>}
+                            {s.atrasadas   > 0 && <span className="badge b-red">{s.atrasadas} ⚠</span>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                }
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       <div className="tabs-row" style={{ alignItems: "center" }}>
         {[{ id: "gantt", label: "Gantt" }, { id: "lista", label: "Lista de tareas" }, { id: "critico", label: "Camino crítico" }, { id: "adjuntos", label: "📎 Adjuntos" }, { id: "adjuntos_tareas", label: "📋 Adjuntos de tareas" }].map(t => (
