@@ -1177,6 +1177,8 @@ function PageDetalle({ proyectoId, onBack, notify }) {
   const [modalTarea, setModalTarea]   = useState(null);
   const [editProyecto, setEditProyecto] = useState(false);
   const [fullscreen, setFullscreen]   = useState(null); // "gantt" | "detalle" | null
+  const [tareasOrden, setTareasOrden] = useState(null); // orden visual drag & drop
+  const dragIdx = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1195,6 +1197,19 @@ function PageDetalle({ proyectoId, onBack, notify }) {
   const criticas = calcularCaminoCritico(tareas);
   const pct      = tareas.length ? Math.round(tareas.reduce((a, t) => a + (t.porcentaje_avance || 0), 0) / tareas.length) : 0;
   const atrasadas = tareas.filter(t => t.fecha_fin && t.fecha_fin < today() && t.porcentaje_avance < 100);
+  const tareasOrdenadas = tareasOrden || tareas;
+
+  const handleDragStart = (i) => { dragIdx.current = i; };
+  const handleDragOver  = (e, i) => {
+    e.preventDefault();
+    if (dragIdx.current === null || dragIdx.current === i) return;
+    const arr = [...tareasOrdenadas];
+    const [moved] = arr.splice(dragIdx.current, 1);
+    arr.splice(i, 0, moved);
+    dragIdx.current = i;
+    setTareasOrden(arr);
+  };
+  const handleDragEnd = () => { dragIdx.current = null; };
 
   const fechas   = tareas.filter(t => t.fecha_inicio && t.fecha_fin);
   const minFecha = fechas.length ? fechas.reduce((a, t) => t.fecha_inicio < a ? t.fecha_inicio : a, fechas[0].fecha_inicio) : proyecto.fecha_inicio;
@@ -1307,15 +1322,27 @@ function PageDetalle({ proyectoId, onBack, notify }) {
             {meses.map((m, i) => <div key={i} className="gh-cell">{m}</div>)}
             {meses.length === 0 && <div className="gh-cell">Línea de tiempo</div>}
           </div>
-          {tareas.length === 0
+          {tareasOrdenadas.length === 0
             ? <div className="empty-state">Sin tareas — usá "+ Nueva tarea" para empezar</div>
-            : tareas.map(t => {
+            : tareasOrdenadas.map((t, i) => {
                 const barStyle = getBarStyle(t);
                 return (
-                  <div key={t.id} className="gantt-row" style={{ gridTemplateColumns: cols }} onClick={() => setModalTarea(t)}>
-                    <div className="gc-label">
-                      <div className="gc-name">{t.nombre}{criticas.has(t.id) && <span className="cc-badge">CC</span>}</div>
-                      <div className="gc-sub">{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
+                  <div
+                    key={t.id}
+                    className="gantt-row"
+                    style={{ gridTemplateColumns: cols, cursor: "grab" }}
+                    draggable
+                    onDragStart={() => handleDragStart(i)}
+                    onDragOver={e => handleDragOver(e, i)}
+                    onDragEnd={handleDragEnd}
+                    onClick={() => setModalTarea(t)}
+                  >
+                    <div className="gc-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ color: "var(--muted2)", fontSize: 12, flexShrink: 0 }} title="Arrastrá para reordenar">⠿</span>
+                      <div>
+                        <div className="gc-name">{t.nombre}{criticas.has(t.id) && <span className="cc-badge">CC</span>}</div>
+                        <div className="gc-sub">{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
+                      </div>
                     </div>
                     <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}` }}>
                       {barStyle
@@ -1327,10 +1354,13 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                 );
               })
           }
-          <div style={{ padding: "10px 16px", display: "flex", gap: 14, borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap" }}>
+          <div style={{ padding: "10px 16px", display: "flex", gap: 14, borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap", alignItems: "center" }}>
             {[["var(--danger)", "Camino crítico"], ["var(--blue)", "En fecha"], ["var(--accent2)", "Completada"], ["var(--warn)", "Atrasada"]].map(([color, label]) => (
               <div key={label} className="flex-gap"><div style={{ width: 10, height: 10, borderRadius: 2, background: color }} /><span style={{ fontSize: 9, color: "var(--muted)" }}>{label}</span></div>
             ))}
+            {tareasOrden && (
+              <button className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={() => setTareasOrden(null)}>↺ Restablecer orden</button>
+            )}
           </div>
         </div>
       )}
