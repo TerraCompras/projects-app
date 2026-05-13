@@ -1508,14 +1508,14 @@ function PageDetalle({ proyectoId, onBack, notify }) {
               </div>
 
               {/* Card por responsable */}
-              <div className="stat">
+              <div className="stat" style={{ paddingLeft: 18 }}>
                 <div className="stat-label" style={{ marginBottom: 8 }}>Tareas por responsable de ejecución</div>
                 {Object.keys(porResponsable).length === 0
                   ? <div style={{ fontSize: 11, color: "var(--muted2)" }}>Sin responsables asignados</div>
                   : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       {Object.entries(porResponsable).map(([resp, s]) => (
-                        <div key={resp} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--navy)", width: 200, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={resp}>
+                        <div key={resp} style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 0 }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--navy)", width: 220, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }} title={resp}>
                             👤 {resp}
                           </div>
                           <div style={{ flex: 1, display: "flex", gap: 4, flexWrap: "wrap" }}>
