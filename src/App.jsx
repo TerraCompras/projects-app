@@ -1277,7 +1277,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
     }
   }
 
-  const cols = `180px ${meses.length > 0 ? `repeat(${meses.length}, 1fr)` : "1fr"}`;
+  const cols = `220px ${meses.length > 0 ? `repeat(${meses.length}, 1fr)` : "1fr"}`;
 
   const handleEliminarTarea = async (id) => {
     try {
