@@ -282,12 +282,22 @@ const api = {
     if (e4) throw e4;
   },
   async crearTarea(tarea) {
-    const { data, error } = await supabase.from("proyecto_tareas").insert([tarea]).select().single();
+    const sanitized = {
+      ...tarea,
+      duracion_dias: parseInt(tarea.duracion_dias) || 1,
+      porcentaje_avance: parseInt(tarea.porcentaje_avance) || 0,
+    };
+    const { data, error } = await supabase.from("proyecto_tareas").insert([sanitized]).select().single();
     if (error) throw error;
     return data;
   },
   async actualizarTarea(id, cambios) {
-    const { data, error } = await supabase.from("proyecto_tareas").update(cambios).eq("id", id).select().single();
+    const sanitized = {
+      ...cambios,
+      duracion_dias: parseInt(cambios.duracion_dias) || 1,
+      porcentaje_avance: parseInt(cambios.porcentaje_avance) || 0,
+    };
+    const { data, error } = await supabase.from("proyecto_tareas").update(sanitized).eq("id", id).select().single();
     if (error) throw error;
     return data;
   },
