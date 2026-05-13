@@ -1515,7 +1515,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                   : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       {Object.entries(porResponsable).map(([resp, s]) => (
                         <div key={resp} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--navy)", minWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={resp}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--navy)", width: 200, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={resp}>
                             👤 {resp}
                           </div>
                           <div style={{ flex: 1, display: "flex", gap: 4, flexWrap: "wrap" }}>
