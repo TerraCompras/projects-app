@@ -113,9 +113,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 .gantt-row:hover{background:var(--surface2)}
 .gh-cell{padding:7px 10px;font-size:9px;font-weight:600;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;border-right:1px solid var(--border);text-align:center}
 .gh-cell:last-child{border-right:none}
-.gc-label{padding:8px 12px;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;min-height:44px}
-.gc-name{font-size:11px;font-weight:600;color:var(--navy)}
-.gc-sub{font-size:9px;color:var(--muted);margin-top:2px}
+.gc-label{padding:8px 12px;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;min-height:44px;overflow:hidden}
+.gc-name{font-size:11px;font-weight:600;color:var(--navy);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gc-sub{font-size:9px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .gc-bars{position:relative;display:flex;align-items:center;min-height:44px}
 .bar{position:absolute;height:18px;border-radius:3px;display:flex;align-items:center;padding:0 6px;font-size:9px;color:#fff;white-space:nowrap;overflow:hidden;font-weight:600}
 .bar.normal{background:var(--blue)}
@@ -1369,7 +1369,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                     {/* ── Fila tarea madre ── */}
                     <div
                       className="gantt-row"
-                      style={{ gridTemplateColumns: cols, cursor: "grab" }}
+                      style={{ gridTemplateColumns: cols, cursor: "grab", background: "#EEF3FA", borderLeft: "3px solid var(--blue)" }}
                       draggable
                       onDragStart={() => handleDragStart(i)}
                       onDragOver={e => handleDragOver(e, i)}
@@ -1411,16 +1411,16 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                         <div
                           key={s.id}
                           className="gantt-row"
-                          style={{ gridTemplateColumns: cols, background: "var(--surface2)", cursor: "pointer" }}
+                          style={{ gridTemplateColumns: cols, background: "#F8FAFB", borderLeft: "3px solid var(--border)", cursor: "pointer" }}
                           onClick={e => { e.stopPropagation(); setModalTarea({ ...t, _openSubtarea: s }); }}
                         >
-                          <div className="gc-label" style={{ paddingLeft: 32 }}>
-                            <div style={{ fontSize: 10, fontWeight: 600, color: "var(--mid)" }}>↳ {s.descripcion}</div>
-                            <div style={{ fontSize: 9, color: "var(--muted2)" }}>{s.responsable || "—"} · {s.porcentaje_avance || 0}%</div>
+                          <div className="gc-label">
+                            <div style={{ fontSize: 10, fontWeight: 600, color: "var(--mid)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>↳ {s.descripcion}</div>
+                            <div style={{ fontSize: 9, color: "var(--muted2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.responsable || "—"} · {s.porcentaje_avance || 0}%</div>
                           </div>
                           <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}` }}>
                             {sStyle
-                              ? <div style={{ ...sStyle, position: "absolute", height: 10, borderRadius: 3, background: s.porcentaje_avance >= 100 ? "var(--accent2)" : "var(--mid)", opacity: 0.8, display: "flex", alignItems: "center", padding: "0 4px" }} />
+                              ? <div style={{ ...sStyle, position: "absolute", height: 10, borderRadius: 3, background: s.porcentaje_avance >= 100 ? "var(--accent2)" : "var(--mid)", opacity: 0.8 }} />
                               : <div style={{ fontSize: 9, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>
                             }
                           </div>
