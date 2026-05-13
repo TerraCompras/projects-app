@@ -113,8 +113,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 .gantt-row:hover{background:var(--surface2)}
 .gh-cell{padding:7px 10px;font-size:9px;font-weight:600;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;border-right:1px solid var(--border);text-align:center}
 .gh-cell:last-child{border-right:none}
-.gc-label{padding:8px 12px;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;min-height:44px;overflow:hidden}
-.gc-name{font-size:11px;font-weight:600;color:var(--navy);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gc-label{padding:8px 12px;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;min-height:44px;overflow:hidden;word-break:break-word}
+.gc-name{font-size:11px;font-weight:600;color:var(--navy);overflow:hidden;text-overflow:ellipsis;white-space:normal;word-break:break-word;line-height:1.3}
 .gc-sub{font-size:9px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .gc-bars{position:relative;display:flex;align-items:center;min-height:44px}
 .bar{position:absolute;height:18px;border-radius:3px;display:flex;align-items:center;padding:0 6px;font-size:9px;color:#fff;white-space:nowrap;overflow:hidden;font-weight:600}
@@ -1369,7 +1369,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                     {/* ── Fila tarea madre ── */}
                     <div
                       className="gantt-row"
-                      style={{ gridTemplateColumns: cols, cursor: "grab", background: "#213363" }}
+                      style={{ gridTemplateColumns: cols, cursor: "grab", background: "#DBEAFE" }}
                       draggable
                       onDragStart={() => handleDragStart(i)}
                       onDragOver={e => handleDragOver(e, i)}
@@ -1377,25 +1377,25 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                       onClick={() => setModalTarea(t)}
                     >
                       <div className="gc-label" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ color: "rgba(255,255,255,.4)", fontSize: 12, flexShrink: 0 }} title="Arrastrá para reordenar">⠿</span>
+                        <span style={{ color: "var(--muted)", fontSize: 12, flexShrink: 0 }} title="Arrastrá para reordenar">⠿</span>
                         {subtareas.length > 0 && (
                           <span
                             onClick={e => toggleExpandir(t.id, e)}
                             title={tareasExpandidas[t.id] ? "Contraer subtareas" : "Expandir subtareas"}
-                            style={{ color: "rgba(255,255,255,.8)", fontSize: 10, cursor: "pointer", flexShrink: 0, userSelect: "none", padding: "0 2px" }}
+                            style={{ color: "var(--blue)", fontSize: 10, cursor: "pointer", flexShrink: 0, userSelect: "none", padding: "0 2px" }}
                           >
                             {tareasExpandidas[t.id] ? "▼" : "▶"}
                           </span>
                         )}
                         <div>
-                          <div style={{ fontSize: 11, fontWeight: 600, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--navy)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             {t.nombre}{criticas.has(t.id) && <span className="cc-badge">CC</span>}
-                            {subtareas.length > 0 && <span style={{ marginLeft: 6, fontSize: 9, color: "rgba(255,255,255,.5)", fontFamily: "var(--mono)" }}>{subtareas.length} sub</span>}
+                            {subtareas.length > 0 && <span style={{ marginLeft: 6, fontSize: 9, color: "var(--muted)", fontFamily: "var(--mono)" }}>{subtareas.length} sub</span>}
                           </div>
-                          <div style={{ fontSize: 9, color: "rgba(255,255,255,.6)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
+                          <div style={{ fontSize: 9, color: "var(--muted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
                         </div>
                       </div>
-                      <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}` }}>
+                      <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}`, background: "#fff" }}>
                         {barStyle
                           ? <div className={`bar ${getBarClass(t)}`} style={barStyle}>{t.nombre}</div>
                           : <div style={{ fontSize: 10, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>
@@ -1550,7 +1550,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                         <div className="gc-name">{t.nombre}{criticas.has(t.id) && <span className="cc-badge">CC</span>}</div>
                         <div className="gc-sub">{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
                       </div>
-                      <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}` }}>
+                      <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}`, background: "#fff" }}>
                         {barStyle
                           ? <div className={`bar ${getBarClass(t)}`} style={barStyle}>{t.nombre}</div>
                           : <div style={{ fontSize: 10, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>
