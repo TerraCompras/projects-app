@@ -1,2348 +1,1313 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import { supabase } from "./lib/supabase";
+import { useState, useEffect, useRef, useCallback } from "react";
+import * as XLSX from "xlsx";
+import {
+  EMPRESAS, BASES_POR_EMPRESA, AREAS_POR_EMPRESA, SUBAREA_TECNICA,
+  DETALLE_TECNICO, TIPOS_REQUISICION, URGENCIA_OPTIONS, PLAZO_PAGO_OPTIONS,
+  CATEGORIAS_RECHAZO, STATUS_LABELS, STATUS_COLOR, URGENCIA_COLOR
+} from "./lib/catalogos";
 
-const PORTAL_URL = "https://erp-portal-fawn.vercel.app";
-const EMPRESAS = ["Parana Logistica", "Clean Sea", "Terra Mare"];
-const USUARIO = "Gerencia";
+// ─── DEMO MODE (sin Supabase) ───────────────────────────────────────────────
+// En producción esto se reemplaza por los imports de ./lib/supabase
+const DEMO_MODE = true;
 
-// ─── CATÁLOGOS COMPRAS (espejo de compras-app) ────────────────────────────────
-const BASES_POR_EMPRESA = {
-  "Parana Logistica": ["Atlantic Dama", "Golondrina de Mar", "Base Zárate", "Base Buenos Aires"],
-  "Clean Sea": ["Clean Sea 1", "Clean Sea 2", "Base Dock Sud"],
-  "Terra Mare": ["Oficina Central", "Base Zárate"],
+let _demoData = [
+  {
+    id: "1", nro_solicitud: 1, titulo: "Compra Bujías Motor Principal",
+    empresa: "Parana Logistica", base_buque: "Golondrina de Mar",
+    area: "Tecnica", subarea: "Sala de Maquinas", detalle_tecnico: "Motor principal",
+    tipo_requisicion: "Material Urgencia", urgencia: "Critica",
+    solicitado_por: "Juan Pérez", fecha_necesaria: "2025-04-20",
+    costo_estimado: 85000, moneda_estimada: "ARS",
+    busco_alternativas: false, observaciones: "Urgente, parada de buque",
+    status: "pendiente_revision", veces_devuelto: 0,
+    created_at: new Date(Date.now() - 2 * 86400000).toISOString(),
+    requisicion_items: [
+      { id: "i1", nro_linea: 1, descripcion: "Bujía NGK BPR6ES", cantidad: 8, unidad: "Uni", stock_disponible: 0, proveedor_sugerido: "Bulonería del Puerto", cantidad_aprobada: null },
+      { id: "i2", nro_linea: 2, descripcion: "Filtro aceite W712", cantidad: 2, unidad: "Uni", stock_disponible: 1, proveedor_sugerido: "", cantidad_aprobada: null },
+    ],
+    requisicion_historial: [
+      { id: "h1", fecha: new Date(Date.now() - 2 * 86400000).toISOString(), evento: "Requisición creada", usuario: "Juan Pérez", status_nuevo: "pendiente_revision" }
+    ]
+  },
+  {
+    id: "2", nro_solicitud: 2, titulo: "Víveres Semana 18",
+    empresa: "Parana Logistica", base_buque: "Atlantic Dama",
+    area: "Viveres", subarea: null, detalle_tecnico: null,
+    tipo_requisicion: "Viveres", urgencia: "Normal",
+    solicitado_por: "María González", fecha_necesaria: "2025-04-25",
+    costo_estimado: 320000, moneda_estimada: "ARS",
+    busco_alternativas: true, observaciones: "",
+    status: "aprobado_cotizar", veces_devuelto: 0,
+    revisado_por: "Comprador", fecha_revision: new Date(Date.now() - 1 * 86400000).toISOString(),
+    fecha_aprobacion: new Date(Date.now() - 86400000).toISOString(),
+    created_at: new Date(Date.now() - 3 * 86400000).toISOString(),
+    requisicion_items: [
+      { id: "i3", nro_linea: 1, descripcion: "Arroz largo fino 1kg", cantidad: 20, unidad: "Kg", stock_disponible: 5, proveedor_sugerido: "Distribuidora Sur", cantidad_aprobada: 20 },
+      { id: "i4", nro_linea: 2, descripcion: "Aceite girasol 1.5L", cantidad: 12, unidad: "Uni", stock_disponible: 0, proveedor_sugerido: "", cantidad_aprobada: 12 },
+    ],
+    requisicion_historial: [
+      { id: "h2", fecha: new Date(Date.now() - 3 * 86400000).toISOString(), evento: "Requisición creada", usuario: "María González", status_nuevo: "pendiente_revision" },
+      { id: "h3", fecha: new Date(Date.now() - 1 * 86400000).toISOString(), evento: "Aprobado para cotizar", usuario: "Comprador", status_nuevo: "aprobado_cotizar" },
+    ]
+  },
+  {
+    id: "3", nro_solicitud: 3, titulo: "Pintura Antifouling Casco",
+    empresa: "Terra Mare", base_buque: "San Fernando",
+    area: "Tecnica", subarea: "Cubierta", detalle_tecnico: "Pintura y anticorrosivo",
+    tipo_requisicion: "Material Mantenimiento", urgencia: "Alta",
+    solicitado_por: "Carlos Ruiz", fecha_necesaria: "2025-05-01",
+    costo_estimado: 450000, moneda_estimada: "ARS",
+    busco_alternativas: false, observaciones: "Varada programada semana 20",
+    status: "en_compra", veces_devuelto: 1,
+    revisado_por: "Comprador", fecha_revision: new Date(Date.now() - 5 * 86400000).toISOString(),
+    fecha_aprobacion: new Date(Date.now() - 4 * 86400000).toISOString(),
+    nro_oc: "OC-0003", proveedor_elegido: "Pinturas Marinas SA",
+    motivo_proveedor: "Mejor precio y stock disponible inmediato",
+    costo_real: 487000, moneda_real: "ARS", plazo_pago: "30 días",
+    fecha_entrega_prom: "2025-04-28",
+    created_at: new Date(Date.now() - 7 * 86400000).toISOString(),
+    dias_solicitud_revision: 2, dias_revision_aprobacion: 1,
+    desvio_presupuestario: 8.2,
+    requisicion_items: [
+      { id: "i5", nro_linea: 1, descripcion: "Antifouling Hempel 20L", cantidad: 6, unidad: "Uni", stock_disponible: 0, proveedor_sugerido: "", cantidad_aprobada: 6, precio_unitario: 72000, subtotal: 432000 },
+      { id: "i6", nro_linea: 2, descripcion: "Primer epoxi 4L", cantidad: 2, unidad: "Uni", stock_disponible: 0, proveedor_sugerido: "", cantidad_aprobada: 2, precio_unitario: 27500, subtotal: 55000 },
+    ],
+    requisicion_historial: [
+      { id: "h4", fecha: new Date(Date.now() - 7 * 86400000).toISOString(), evento: "Requisición creada", usuario: "Carlos Ruiz", status_nuevo: "pendiente_revision" },
+      { id: "h5", fecha: new Date(Date.now() - 6 * 86400000).toISOString(), evento: "Devuelto: Descripción incompleta", usuario: "Comprador", status_nuevo: "rechazado" },
+      { id: "h6", fecha: new Date(Date.now() - 5 * 86400000).toISOString(), evento: "Re-ingresado por solicitante", usuario: "Carlos Ruiz", status_nuevo: "pendiente_revision" },
+      { id: "h7", fecha: new Date(Date.now() - 4 * 86400000).toISOString(), evento: "OC emitida — OC-0003", usuario: "Comprador", status_nuevo: "en_compra" },
+    ]
+  }
+];
+let _demoOcCounter = 4;
+
+const demoApi = {
+  async getRequisiciones(filtros = {}) {
+    await delay(300);
+    let data = [..._demoData];
+    if (filtros.status) data = data.filter(r => r.status === filtros.status);
+    if (filtros.empresa) data = data.filter(r => r.empresa === filtros.empresa);
+    return data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  },
+  async getRequisicion(id) {
+    await delay(200);
+    return _demoData.find(r => r.id === id) || null;
+  },
+  async crearRequisicion(req, items, usuario) {
+    await delay(400);
+    const nueva = {
+      ...req, id: String(Date.now()), nro_solicitud: _demoData.length + 1,
+      status: "pendiente_revision", veces_devuelto: 0,
+      created_at: new Date().toISOString(),
+      requisicion_items: items.map((it, i) => ({ ...it, id: `i${Date.now()}${i}`, nro_linea: i + 1 })),
+      requisicion_historial: [{ id: `h${Date.now()}`, fecha: new Date().toISOString(), evento: "Requisición creada", usuario, status_nuevo: "pendiente_revision" }]
+    };
+    _demoData.unshift(nueva);
+    return nueva;
+  },
+  async actualizarRequisicion(id, cambios, usuario, evento) {
+    await delay(300);
+    const idx = _demoData.findIndex(r => r.id === id);
+    if (idx === -1) throw new Error("No encontrado");
+    const anterior = _demoData[idx];
+    const actualizado = { ...anterior, ...cambios, updated_at: new Date().toISOString() };
+    if (evento) {
+      actualizado.requisicion_historial = [...(anterior.requisicion_historial || []), {
+        id: `h${Date.now()}`, fecha: new Date().toISOString(),
+        evento, usuario, status_anterior: anterior.status, status_nuevo: cambios.status || anterior.status
+      }];
+    }
+    _demoData[idx] = actualizado;
+    return actualizado;
+  },
+  async actualizarItems(reqId, items) {
+    await delay(200);
+    const idx = _demoData.findIndex(r => r.id === reqId);
+    if (idx >= 0) _demoData[idx].requisicion_items = items.map((it, i) => ({ ...it, id: it.id || `i${Date.now()}${i}`, nro_linea: i + 1 }));
+  },
+  async getProveedores() {
+    await delay(100);
+    return [
+      { id: "p1", nombre: "Bulonería del Puerto", rubro: "Ferretería" },
+      { id: "p2", nombre: "Pinturas Marinas SA", rubro: "Pintura" },
+      { id: "p3", nombre: "Distribuidora Sur", rubro: "Víveres" },
+      { id: "p4", nombre: "Combustibles Parana", rubro: "Combustible" },
+      { id: "p5", nombre: "TechMar Equipos", rubro: "Electrónica" },
+    ];
+  },
+  async crearProveedor(prov) {
+    await delay(200);
+    const nuevo = { ...prov, id: `p${Date.now()}`, activo: true };
+    return nuevo;
+  },
+  nextOcNum() { return `OC-${String(_demoOcCounter++).padStart(4, "0")}`; }
 };
-const URGENCIA_OPTIONS = ["Normal", "Alta", "Critica"];
-const SUBAREA_TECNICA = {
-  "Parana Logistica": ["Motores", "Cubierta", "Electricidad", "Navegación", "Seguridad", "Casco", "Habitabilidad", "Otro"],
-  "Clean Sea": ["Equipos", "Cubierta", "Electricidad", "Seguridad", "Otro"],
-  "Terra Mare": ["Oficina", "Equipos", "Mantenimiento", "Otro"],
-};
-// FIX A6: estos valores deben coincidir con TIPOS_REQUISICION en compras-app/src/lib/catalogos.js
-const TIPOS_REQUISICION_PROJECTS = ["Bienes", "Servicios", "Mixto"];
 
+const delay = ms => new Promise(r => setTimeout(r, ms));
+const api = demoApi;
+
+// ─── HELPERS ────────────────────────────────────────────────────────────────
+const fmt = (n, cur = "ARS") =>
+  n != null ? new Intl.NumberFormat("es-AR", { style: "currency", currency: cur, maximumFractionDigits: 0 }).format(n) : "—";
+
+const fmtDate = d => d ? new Date(d).toLocaleDateString("es-AR") : "—";
+
+const diffDays = (a, b) => {
+  if (!a || !b) return null;
+  return Math.round(Math.abs(new Date(b) - new Date(a)) / 86400000);
+};
+
+// ─── CSS ────────────────────────────────────────────────────────────────────
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --navy:#213363;--blue:#235C96;--mid:#6381A7;--light:#A5B5CC;
-  --bg:#F0F4F8;--surface:#FFF;--surface2:#F5F7FA;--border:#D6E0ED;--border2:#B0C4D8;
-  --text:#213363;--muted:#6381A7;--muted2:#8FA3BC;--accent:#235C96;--accent2:#1E7E4A;
-  --warn:#B07D0A;--danger:#C0392B;--teal:#1A7A6E;
-  --sans:'Montserrat',sans-serif;--mono:'DM Mono',monospace;--r:6px;--r2:10px;
+  --bg:#0d1117;--surface:#161b22;--surface2:#21262d;--surface3:#30363d;
+  --border:#30363d;--border2:#484f58;
+  --text:#e6edf3;--muted:#8b949e;--muted2:#6e7681;
+  --accent:#58a6ff;--accent2:#3fb950;--warn:#d29922;--danger:#f85149;
+  --purple:#bc8cff;--teal:#39d353;--orange:#f0883e;
+  --mono:'DM Mono',monospace;--sans:'DM Sans',sans-serif;
+  --r:6px;--r2:10px;
 }
 body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5;min-height:100vh}
 .app{display:flex;min-height:100vh}
 
-/* ── SIDEBAR ── */
-.sidebar{width:235px;min-width:235px;background:var(--navy);display:flex;flex-direction:column;box-shadow:2px 0 8px rgba(33,51,99,.15);transition:transform .25s}
-.sidebar-header{border-bottom:1px solid rgba(255,255,255,.1)}
-.sidebar-logo-wrap{padding:20px 18px 16px;display:flex;align-items:center;gap:12px}
-.sidebar-logo-img{width:36px;height:36px;object-fit:cover;border-radius:50%;border:2px solid rgba(255,255,255,.2)}
-.sidebar-logo-main{font-size:13px;font-weight:700;color:#fff;letter-spacing:2px;text-transform:uppercase}
-.sidebar-logo-sub{font-size:9px;color:rgba(255,255,255,.5);letter-spacing:.5px}
-.nav-section{padding:12px 18px 4px;font-family:var(--mono);font-size:9px;letter-spacing:2px;color:rgba(255,255,255,.35);text-transform:uppercase}
-.ni{display:flex;align-items:center;gap:9px;padding:7px 18px;font-size:12px;font-weight:500;cursor:pointer;color:rgba(255,255,255,.6);border-left:3px solid transparent;transition:all .12s;user-select:none}
-.ni:hover{color:#fff;background:rgba(255,255,255,.06)}
-.ni.active{color:#fff;border-left-color:var(--light);background:rgba(255,255,255,.1);font-weight:600}
-.ni.back{color:rgba(255,255,255,.4);font-size:11px;border-top:1px solid rgba(255,255,255,.08);margin-top:4px}
-.ni.back:hover{color:rgba(255,255,255,.8)}
-.ni-icon{font-size:13px;width:16px;text-align:center;flex-shrink:0}
+/* SIDEBAR */
+.sidebar{width:240px;min-width:240px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:0}
+.sidebar-header{padding:20px 18px 16px;border-bottom:1px solid var(--border)}
+.sidebar-logo{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:2px;color:var(--accent);text-transform:uppercase}
+.sidebar-sub{font-size:11px;color:var(--muted2);margin-top:2px}
+.nav-section{padding:12px 8px 4px;font-family:var(--mono);font-size:10px;letter-spacing:1.5px;color:var(--muted2);text-transform:uppercase;padding-left:14px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:8px 14px;font-size:13px;font-weight:400;cursor:pointer;color:var(--muted);border-left:2px solid transparent;border-radius:0 var(--r) var(--r) 0;margin:1px 6px 1px 0;transition:all .15s}
+.nav-item:hover{color:var(--text);background:var(--surface2)}
+.nav-item.active{color:var(--accent);border-left-color:var(--accent);background:rgba(88,166,255,.08);font-weight:500}
+.nav-badge{margin-left:auto;background:var(--warn);color:#000;font-family:var(--mono);font-size:10px;font-weight:500;padding:1px 6px;border-radius:10px;min-width:18px;text-align:center}
+.nav-badge.red{background:var(--danger);color:#fff}
 
-/* ── MAIN ── */
+/* MAIN */
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
-.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:13px 28px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 1px 3px rgba(33,51,99,.06);gap:12px}
-.topbar-title{font-size:12px;font-weight:600;letter-spacing:1px;color:var(--navy);text-transform:uppercase;white-space:nowrap}
-.content{flex:1;overflow-y:auto;padding:24px 28px;background:var(--bg)}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:20px;margin-bottom:16px;box-shadow:0 1px 4px rgba(33,51,99,.06)}
-.badge{display:inline-flex;align-items:center;font-family:var(--mono);font-size:9px;font-weight:600;padding:3px 8px;border-radius:4px;white-space:nowrap;letter-spacing:.3px}
-.b-blue{background:#DBEAFE;color:#1E40AF;border:1px solid #BFDBFE}
-.b-green{background:#D1FAE5;color:#065F46;border:1px solid #A7F3D0}
-.b-red{background:#FEE2E2;color:#991B1B;border:1px solid #FECACA}
-.b-amber{background:#FEF3C7;color:#92400E;border:1px solid #FDE68A}
-.b-gray{background:#F3F4F6;color:#6B7280;border:1px solid #E5E7EB}
-.b-purple{background:#EDE9FE;color:#4C1D95;border:1px solid #DDD6FE}
-.b-teal{background:#D1FAE5;color:#065F46;border:1px solid #A7F3D0}
-.btn{display:inline-flex;align-items:center;gap:6px;font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.3px;padding:7px 14px;border-radius:var(--r);border:1px solid transparent;cursor:pointer;transition:all .15s;white-space:nowrap;text-transform:uppercase}
-.btn-primary{background:var(--blue);color:#fff}.btn-primary:hover{background:var(--navy)}
-.btn-danger{background:transparent;color:var(--danger);border-color:var(--danger)}.btn-danger:hover{background:#FEE2E2}
-.btn-ghost{background:transparent;color:var(--muted);border-color:var(--border)}.btn-ghost:hover{color:var(--text);background:var(--surface2)}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.topbar-left{display:flex;align-items:center;gap:12px}
+.topbar-title{font-family:var(--mono);font-size:12px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase}
+.topbar-right{display:flex;align-items:center;gap:8px}
+.content{flex:1;overflow-y:auto;padding:24px 28px}
+
+/* DEMO BADGE */
+.demo-banner{background:rgba(210,153,34,.12);border:1px solid rgba(210,153,34,.3);border-radius:var(--r);padding:10px 16px;margin-bottom:20px;font-size:12px;color:var(--warn);display:flex;align-items:center;gap:8px}
+
+/* STATS */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:16px 18px;transition:border-color .2s}
+.stat:hover{border-color:var(--border2)}
+.stat-label{font-size:11px;color:var(--muted);letter-spacing:.5px;margin-bottom:6px;text-transform:uppercase;font-family:var(--mono)}
+.stat-value{font-family:var(--mono);font-size:26px;font-weight:500}
+.stat-sub{font-size:11px;color:var(--muted2);margin-top:4px}
+.v-blue{color:var(--accent)}.v-green{color:var(--accent2)}.v-amber{color:var(--warn)}.v-red{color:var(--danger)}.v-purple{color:var(--purple)}.v-teal{color:var(--teal)}.v-gray{color:var(--muted)}
+
+/* CARD */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:20px;margin-bottom:16px}
+.card-title{font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between}
+
+/* FILTERS */
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+.filter-chip{font-family:var(--mono);font-size:11px;padding:5px 12px;border-radius:20px;border:1px solid var(--border);cursor:pointer;color:var(--muted);transition:all .15s;white-space:nowrap}
+.filter-chip:hover{border-color:var(--border2);color:var(--text)}
+.filter-chip.active{border-color:var(--accent);color:var(--accent);background:rgba(88,166,255,.08)}
+.search-input{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--sans);font-size:13px;padding:6px 12px;outline:none;transition:border-color .15s;min-width:200px}
+.search-input:focus{border-color:var(--accent)}
+.search-input::placeholder{color:var(--muted2)}
+
+/* TABLE */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font-family:var(--mono);font-size:10px;letter-spacing:1px;color:var(--muted);text-transform:uppercase;padding:8px 12px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:11px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.02)}
+.tr-clickable{cursor:pointer}
+
+/* BADGES */
+.badge{display:inline-flex;align-items:center;font-family:var(--mono);font-size:10px;font-weight:500;padding:3px 8px;border-radius:4px;letter-spacing:.5px;white-space:nowrap}
+.b-amber{background:rgba(210,153,34,.15);color:var(--warn)}
+.b-blue{background:rgba(88,166,255,.15);color:var(--accent)}
+.b-teal{background:rgba(57,211,83,.15);color:var(--teal)}
+.b-red{background:rgba(248,81,73,.15);color:var(--danger)}
+.b-purple{background:rgba(188,140,255,.15);color:var(--purple)}
+.b-orange{background:rgba(240,136,62,.15);color:var(--orange)}
+.b-green{background:rgba(63,185,80,.15);color:var(--accent2)}
+.b-gray{background:rgba(139,148,158,.15);color:var(--muted)}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.5px;padding:7px 14px;border-radius:var(--r);border:1px solid transparent;cursor:pointer;transition:all .15s;white-space:nowrap;text-transform:uppercase}
+.btn-primary{background:var(--accent);color:#0d1117;border-color:var(--accent)}
+.btn-primary:hover{background:#79c0ff}
+.btn-success{background:var(--accent2);color:#0d1117;border-color:var(--accent2)}
+.btn-success:hover{background:#56d364}
+.btn-danger{background:transparent;color:var(--danger);border-color:var(--danger)}
+.btn-danger:hover{background:rgba(248,81,73,.1)}
+.btn-ghost{background:transparent;color:var(--muted);border-color:var(--border)}
+.btn-ghost:hover{color:var(--text);border-color:var(--border2)}
+.btn-warn{background:transparent;color:var(--warn);border-color:var(--warn)}
+.btn-warn:hover{background:rgba(210,153,34,.1)}
 .btn-sm{padding:4px 10px;font-size:10px}
+.btn-xs{padding:3px 8px;font-size:10px}
 .btn:disabled{opacity:.4;cursor:not-allowed}
-.overlay{position:fixed;inset:0;background:rgba(33,51,99,.5);display:flex;align-items:flex-start;justify-content:center;z-index:100;padding:20px;overflow-y:auto;animation:fadeIn .15s}
-.modal{background:var(--surface);border:1px solid var(--border);border-radius:12px;width:100%;max-width:760px;margin:auto;animation:slideUp .2s;box-shadow:0 8px 32px rgba(33,51,99,.18)}
-.mhdr{display:flex;justify-content:space-between;align-items:flex-start;padding:18px 22px;border-bottom:1px solid var(--border);background:var(--surface2);border-radius:12px 12px 0 0}
-.mtitle{font-size:13px;font-weight:700;letter-spacing:.5px;color:var(--navy)}
-.mbody{padding:22px}
-.mftr{padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;background:var(--surface2);border-radius:0 0 12px 12px}
-.mclose{background:none;border:none;color:var(--muted);font-size:20px;cursor:pointer}
-.mclose:hover{color:var(--navy)}
+
+/* MODAL */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);display:flex;align-items:flex-start;justify-content:center;z-index:100;padding:20px;overflow-y:auto;animation:fadeIn .15s}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);width:100%;max-width:820px;margin:auto;animation:slideUp .2s}
+.modal-header{display:flex;justify-content:space-between;align-items:flex-start;padding:20px 24px;border-bottom:1px solid var(--border)}
+.modal-title{font-family:var(--mono);font-size:13px;letter-spacing:1px}
+.modal-body{padding:24px}
+.modal-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+.modal-close{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:2px;line-height:1}
+.modal-close:hover{color:var(--text)}
+
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
-@keyframes slideUp{from{transform:translateY(14px);opacity:0}to{transform:translateY(0);opacity:1}}
-.fg{display:flex;flex-direction:column;gap:5px}
-.fg label{font-size:10px;color:var(--navy);letter-spacing:.5px;text-transform:uppercase;font-weight:600}
-.fg input,.fg select,.fg textarea{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--sans);font-size:13px;padding:8px 10px;outline:none;transition:border-color .15s}
-.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--blue)}
-.fg textarea{resize:vertical;min-height:65px}
+@keyframes slideUp{from{transform:translateY(16px);opacity:0}to{transform:translateY(0);opacity:1}}
+
+/* FORM */
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
 .form-grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px}
-.form-section{font-size:10px;font-weight:700;letter-spacing:1.5px;color:var(--blue);text-transform:uppercase;margin:18px 0 12px;padding-bottom:6px;border-bottom:2px solid var(--light)}
-.tabs-row{display:flex;border-bottom:2px solid var(--border);margin-bottom:18px;overflow-x:auto}
-.tab{font-size:11px;font-weight:600;padding:9px 16px;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;transition:all .12s;text-transform:uppercase;letter-spacing:.5px;margin-bottom:-2px;white-space:nowrap}
-.tab.active{color:var(--blue);border-bottom-color:var(--blue)}
-.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
-.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:16px 18px}
-.stat-label{font-size:10px;color:var(--muted);font-weight:600;letter-spacing:.5px;margin-bottom:6px;text-transform:uppercase}
-.stat-value{font-family:var(--mono);font-size:28px;font-weight:600}
-.filter-row{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
-.filter-select{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--sans);font-size:11px;padding:6px 10px;outline:none;cursor:pointer}
-.req-row{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:16px 18px;margin-bottom:10px;cursor:pointer;transition:all .15s}
-.req-row:hover{border-color:var(--blue);box-shadow:0 2px 8px rgba(35,92,150,.12)}
-.req-row.active-border{border-left:4px solid var(--danger)}
-.req-title{font-weight:600;font-size:14px;margin-bottom:6px;color:var(--navy)}
-.req-meta{display:flex;gap:14px;font-size:11px;color:var(--muted);flex-wrap:wrap;align-items:center}
-.info-box{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;font-size:13px}
-.info-box.accent{border-left:3px solid var(--blue)}
-.info-box.danger{border-left:3px solid var(--danger);background:#FEF2F2}
-.flex-gap{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.flex-between{display:flex;justify-content:space-between;align-items:center;gap:8px}
-.mt8{margin-top:8px}.mt12{margin-top:12px}.mt16{margin-top:16px}
-.mb8{margin-bottom:8px}.mb12{margin-bottom:12px}
-.text-mono{font-family:var(--mono)}.text-muted{color:var(--muted)}
-.empty-state{text-align:center;padding:48px 20px;color:var(--muted);font-size:13px}
-.loading{display:flex;align-items:center;justify-content:center;padding:48px;color:var(--muted);gap:10px;font-size:13px}
+.form-full{grid-column:1/-1}
+.fg{display:flex;flex-direction:column;gap:5px}
+.fg label{font-size:11px;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;font-family:var(--mono)}
+.fg input,.fg select,.fg textarea{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);color:var(--text);font-family:var(--sans);font-size:13px;padding:8px 10px;outline:none;transition:border-color .15s}
+.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--accent)}
+.fg select option{background:var(--surface2)}
+.fg textarea{resize:vertical;min-height:70px}
+.fg input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent)}
+.checkbox-row{display:flex;align-items:center;gap:8px;padding:8px 0}
+.checkbox-row label{font-size:13px;color:var(--text);letter-spacing:0;text-transform:none;font-family:var(--sans);cursor:pointer}
+.form-section{font-family:var(--mono);font-size:10px;letter-spacing:2px;color:var(--accent);text-transform:uppercase;margin:20px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.field-hint{font-size:11px;color:var(--muted2);margin-top:2px}
+
+/* ITEMS TABLE */
+.items-edit th{font-size:10px}
+.items-edit td{padding:6px 8px}
+.items-edit input{background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:var(--mono);font-size:12px;padding:4px 7px;width:100%;outline:none}
+.items-edit input:focus{border-color:var(--accent)}
+
+/* TIMELINE */
+.timeline{padding:0;list-style:none}
+.tl-item{display:flex;gap:12px;padding-bottom:16px;position:relative}
+.tl-item:last-child{padding-bottom:0}
+.tl-item:not(:last-child)::before{content:'';position:absolute;left:11px;top:24px;bottom:0;width:1px;background:var(--border)}
+.tl-dot{width:24px;height:24px;border-radius:50%;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0;margin-top:2px;z-index:1}
+.tl-dot.created{border-color:var(--accent);color:var(--accent)}
+.tl-dot.approved{border-color:var(--accent2);color:var(--accent2)}
+.tl-dot.rejected{border-color:var(--danger);color:var(--danger)}
+.tl-dot.updated{border-color:var(--warn);color:var(--warn)}
+.tl-content{flex:1;min-width:0}
+.tl-evento{font-size:13px;font-weight:500}
+.tl-meta{font-size:11px;color:var(--muted);margin-top:2px;display:flex;gap:12px}
+
+/* KPI BARS */
+.kpi-bar-wrap{margin-bottom:10px}
+.kpi-bar-label{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px}
+.kpi-bar-track{height:6px;background:var(--surface2);border-radius:3px;overflow:hidden}
+.kpi-bar-fill{height:100%;border-radius:3px;transition:width .5s}
+
+/* UPLOAD */
+.upload-zone{border:2px dashed var(--border);border-radius:var(--r2);padding:40px;text-align:center;cursor:pointer;transition:all .2s}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--accent);background:rgba(88,166,255,.04)}
+.upload-icon{font-size:36px;margin-bottom:10px}
+.upload-title{font-family:var(--mono);font-size:13px;margin-bottom:6px;color:var(--text)}
+.upload-sub{font-size:12px;color:var(--muted)}
+
+/* URGENCY INDICATOR */
+.urg-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px;flex-shrink:0}
+.urg-Critica{background:var(--danger)}
+.urg-Alta{background:var(--warn)}
+.urg-Normal{background:var(--accent2)}
+
+/* NOTIF */
+.notif{position:fixed;bottom:24px;right:24px;background:var(--surface2);border:1px solid var(--border);border-left-width:3px;border-radius:var(--r2);padding:12px 16px;font-size:13px;animation:slideUp .2s;z-index:300;max-width:340px;display:flex;align-items:center;gap:10px}
+.notif-close{margin-left:auto;background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px}
+.n-green{border-left-color:var(--accent2)}.n-red{border-left-color:var(--danger)}.n-amber{border-left-color:var(--warn)}.n-blue{border-left-color:var(--accent)}
+
+/* MISC */
+.divider{height:1px;background:var(--border);margin:16px 0}
+.text-mono{font-family:var(--mono)}
+.text-muted{color:var(--muted)}
+.text-right{text-align:right}
+.flex{display:flex}.flex-gap{display:flex;gap:8px;align-items:center}.flex-between{display:flex;justify-content:space-between;align-items:center}
+.mt4{margin-top:4px}.mt8{margin-top:8px}.mt12{margin-top:12px}.mt16{margin-top:16px}.mt20{margin-top:20px}
+.mb8{margin-bottom:8px}.mb12{margin-bottom:12px}.mb16{margin-bottom:16px}
+.w100{width:100%}
+.info-box{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;font-size:12px;color:var(--muted)}
+.info-box.accent{border-left:3px solid var(--accent);border-left-width:3px}
+.tag{display:inline-block;font-family:var(--mono);font-size:10px;padding:2px 7px;background:var(--surface2);border:1px solid var(--border);border-radius:4px;color:var(--muted2)}
 .spin{animation:spin 1s linear infinite}
 @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-.notif{position:fixed;bottom:20px;right:20px;background:var(--surface);border:1px solid var(--border);border-left-width:3px;border-radius:var(--r2);padding:12px 16px;font-size:13px;animation:slideUp .2s;z-index:300;max-width:340px;display:flex;align-items:center;gap:10px;box-shadow:0 4px 16px rgba(33,51,99,.15)}
-.n-green{border-left-color:var(--accent2)}.n-red{border-left-color:var(--danger)}.n-amber{border-left-color:var(--warn)}.n-blue{border-left-color:var(--blue)}
-.pct-bar{height:6px;background:var(--surface2);border-radius:3px;overflow:hidden;border:1px solid var(--border)}
-.pct-fill{height:100%;border-radius:3px;background:var(--blue);transition:width .3s}
-.pct-fill.critical{background:var(--danger)}
-.pct-fill.done{background:var(--accent2)}
-.recurso-tag{display:inline-flex;align-items:center;gap:5px;background:#DBEAFE;color:#1E40AF;border:1px solid #BFDBFE;border-radius:4px;padding:3px 8px;font-size:10px;font-family:var(--mono)}
-.recurso-tag button{background:none;border:none;cursor:pointer;color:#1E40AF;font-size:11px;padding:0;line-height:1;opacity:.6}
-.recurso-tag button:hover{opacity:1}
-.gantt-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden}
-.gantt-header{display:grid;border-bottom:1px solid var(--border);background:var(--surface2)}
-.gantt-row{display:grid;border-bottom:1px solid var(--border)}
-.gantt-row:last-child{border-bottom:none}
-.gantt-row:hover{background:var(--surface2)}
-.gh-cell{padding:7px 10px;font-size:9px;font-weight:600;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;border-right:1px solid var(--border);text-align:center}
-.gh-cell:last-child{border-right:none}
-.gc-label{padding:8px 12px;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;min-height:44px;overflow:hidden;word-break:break-word}
-.gc-name{font-size:11px;font-weight:600;color:var(--navy);overflow:hidden;text-overflow:ellipsis;white-space:normal;word-break:break-word;line-height:1.3}
-.gc-sub{font-size:9px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.gc-bars{position:relative;display:flex;align-items:center;min-height:44px}
-.bar{position:absolute;height:18px;border-radius:3px;display:flex;align-items:center;padding:0 6px;font-size:9px;color:#fff;white-space:nowrap;overflow:hidden;font-weight:600}
-.bar.normal{background:var(--blue)}
-.bar.critical{background:var(--danger)}
-.bar.done{background:var(--accent2)}
-.bar.late{background:var(--warn)}
-.cc-badge{display:inline-block;font-size:7px;background:#FEE2E2;color:#991B1B;border:1px solid #FECACA;border-radius:3px;padding:1px 4px;margin-left:4px;font-family:var(--mono);font-weight:700}
-.tarea-row{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:14px 16px;margin-bottom:8px;cursor:pointer;transition:all .15s}
-.tarea-row:hover{border-color:var(--blue)}
-.tarea-row.critica{border-left:3px solid var(--danger)}
-.tarea-row.atrasada{border-left:3px solid var(--warn)}
-.dia-btn{padding:5px 12px;border-radius:var(--r);font-size:11px;font-weight:600;cursor:pointer;user-select:none;transition:all .12s;border:1px solid var(--border)}
-.dia-btn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
-.dia-btn.inactive{background:var(--surface2);color:var(--muted)}
-.fullscreen-overlay{position:fixed;inset:0;background:#fff;z-index:200;display:flex;flex-direction:column;animation:fadeIn .2s}
-.fs-topbar{background:var(--navy);padding:12px 24px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
-.fs-title{color:#fff;font-size:14px;font-weight:700;letter-spacing:.5px}
-.fs-content{flex:1;overflow:auto;padding:24px;background:var(--bg)}
-.fs-btn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:var(--r);padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--sans);display:flex;align-items:center;gap:6px;transition:all .15s}
-.fs-btn:hover{background:rgba(255,255,255,.25)}
-
-.btn-cotizar{background:transparent;color:#065F46;border-color:#A7F3D0;background:#D1FAE5}.btn-cotizar:hover{background:#A7F3D0}
-.cotizar-badge{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;background:#D1FAE5;color:#065F46;border:1px solid #A7F3D0;white-space:nowrap}
-
-/* ── HAMBURGER (mobile) ── */
-.hamburger{display:none;background:none;border:none;cursor:pointer;padding:4px;flex-direction:column;gap:4px}
-.hamburger span{display:block;width:20px;height:2px;background:var(--navy);border-radius:2px;transition:all .2s}
-.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:49}
-
-/* ── RESPONSIVE ── */
-@media(max-width:768px){
-  .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:50;transform:translateX(-100%)}
-  .sidebar.open{transform:translateX(0)}
-  .sidebar-overlay.open{display:block}
-  .hamburger{display:flex}
-  .topbar{padding:10px 16px}
-  .content{padding:16px}
-  .stats{grid-template-columns:repeat(2,1fr)}
-  .form-grid{grid-template-columns:1fr}
-  .form-grid-3{grid-template-columns:1fr}
-  .gantt-wrap{overflow-x:auto}
-  .req-title{font-size:13px}
-  .modal{max-width:100%;margin:0;border-radius:12px 12px 0 0;position:fixed;bottom:0;left:0;right:0;max-height:90vh;overflow-y:auto}
-  .overlay{align-items:flex-end;padding:0}
-  .flex-between{flex-wrap:wrap}
-  .filter-row{gap:6px}
-  .filter-select{min-width:0;flex:1}
-}
-@media(max-width:480px){
-  .stats{grid-template-columns:repeat(2,1fr)}
-  .stat-value{font-size:22px}
-  .btn{padding:6px 10px;font-size:10px}
-  .topbar-title{font-size:11px}
-}
+.empty-state{text-align:center;padding:48px 24px;color:var(--muted)}
+.empty-icon{font-size:32px;margin-bottom:10px}
+.loading{display:flex;align-items:center;justify-content:center;padding:60px;color:var(--muted);gap:10px;font-size:13px}
 `;
 
-const STATUS_PROYECTO = {
-  planificado: { label: "Planificado", color: "b-gray" },
-  en_curso:    { label: "En curso",    color: "b-blue" },
-  completado:  { label: "Completado",  color: "b-green" },
-  cancelado:   { label: "Cancelado",   color: "b-red" },
-};
-
-const STATUS_TAREA = {
-  pendiente:  { label: "Pendiente",  color: "b-gray" },
-  en_curso:   { label: "En curso",   color: "b-blue" },
-  completada: { label: "Completada", color: "b-green" },
-  atrasada:   { label: "Atrasada",   color: "b-amber" },
-  bloqueada:  { label: "Bloqueada",  color: "b-red" },
-};
-
-const DIAS_SEMANA  = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
-const DIAS_DEFAULT = [true, true, true, true, true, false, false];
-
-const fmtDate  = d => d ? new Date(d + "T00:00:00").toLocaleDateString("es-AR") : "—";
-const diffDays = (a, b) => Math.ceil((new Date(b) - new Date(a)) / 86400000);
-const today    = () => new Date().toISOString().split("T")[0];
-
-function calcFechaFin(inicio, duracion, diasHabiles) {
-  if (!inicio || !duracion || !diasHabiles?.some(d => d)) return "";
-  let cur = new Date(inicio + "T00:00:00");
-  let restante = parseInt(duracion);
-  while (restante > 0) {
-    const dow = (cur.getDay() + 6) % 7;
-    if (diasHabiles[dow]) restante--;
-    if (restante > 0) cur.setDate(cur.getDate() + 1);
-  }
-  return cur.toISOString().split("T")[0];
-}
-
-// ─── API ─────────────────────────────────────────────────────────────────────
-const api = {
-  async getPerfiles() {
-    const { data, error } = await supabase.from("perfiles").select("id, nombre, email").eq("activo", true).order("nombre");
-    if (error) throw error;
-    return data || [];
-  },
-  async getRecursosCatalogo() {
-    const { data, error } = await supabase.from("proyecto_recursos_catalogo").select("*").eq("activo", true).order("nombre");
-    if (error) throw error;
-    return data || [];
-  },
-  async agregarRecursoCatalogo(nombre) {
-    const { data, error } = await supabase.from("proyecto_recursos_catalogo").insert([{ nombre, tipo: "otro" }]).select().single();
-    if (error) throw error;
-    return data;
-  },
-  async getProyectos(filtros = {}) {
-    let q = supabase.from("proyectos").select("*, proyecto_recursos(*), proyecto_tareas(*)").order("created_at", { ascending: false });
-    if (filtros.empresa) q = q.eq("empresa", filtros.empresa);
-    if (filtros.status)  q = q.eq("status",  filtros.status);
-    const { data, error } = await q;
-    if (error) throw error;
-    const proyectos = data || [];
-    if (proyectos.length) {
-      const ids = proyectos.map(p => p.id);
-      // Cargar contactos por separado
-      const { data: contactos } = await supabase.from("proyecto_contactos").select("*").in("proyecto_id", ids);
-      if (contactos) {
-        proyectos.forEach(p => {
-          p.proyecto_contactos = contactos.filter(c => c.proyecto_id === p.id);
-        });
-      }
-      // Cargar subtareas por separado
-      const { data: subtareas } = await supabase.from("proyecto_subtareas").select("*").in("proyecto_id", ids).order("fecha_inicio", { ascending: true });
-      if (subtareas) {
-        proyectos.forEach(p => {
-          (p.proyecto_tareas || []).forEach(t => {
-            t.subtareas = subtareas.filter(s => s.tarea_id === t.id);
-          });
-        });
-      }
-    }
-    return proyectos;
-  },
-  async crearProyecto(proy, recursos, contactos) {
-    // Insert sin select de relaciones para evitar schema cache
-    const { data, error } = await supabase.from("proyectos").insert([proy]).select("id, nombre, empresa, status, tipo, cliente, responsable, fecha_inicio, fecha_fin, descripcion, created_at").single();
-    if (error) throw error;
-    // FIX A2: error check en recursos y contactos
-    if (recursos?.length) {
-      const { error: eR } = await supabase.from("proyecto_recursos").insert(recursos.map(r => ({ nombre: r, proyecto_id: data.id })));
-      if (eR) throw new Error("Error insertando recursos: " + eR.message);
-    }
-    if (contactos?.length) {
-      const { error: eC } = await supabase.from("proyecto_contactos").insert(contactos.map(c => ({ ...c, proyecto_id: data.id })));
-      if (eC) throw new Error("Error insertando contactos: " + eC.message);
-    }
-    return data;
-  },
-  async actualizarProyecto(id, cambios, recursos, contactos) {
-    // Solo actualizar columnas propias de proyectos, sin relaciones
-    const camposProyecto = { updated_at: new Date().toISOString() };
-    const camposPermitidos = ["nombre","empresa","tipo","cliente","descripcion","fecha_inicio","fecha_fin","responsable","status"];
-    camposPermitidos.forEach(k => { if (cambios[k] !== undefined) camposProyecto[k] = cambios[k]; });
-    const { error: errUpdate } = await supabase.from("proyectos").update(camposProyecto).eq("id", id);
-    if (errUpdate) throw new Error("Error actualizando proyecto: " + errUpdate.message);
-    // Reemplazar recursos
-    if (recursos !== undefined) {
-      // FIX A3: error check en delete recursos
-      const { error: errDelR } = await supabase.from("proyecto_recursos").delete().eq("proyecto_id", id);
-      if (errDelR) throw new Error("Error borrando recursos: " + errDelR.message);
-      if (recursos.length) {
-        const { error: errInsR } = await supabase.from("proyecto_recursos").insert(recursos.map(r => ({ nombre: r, proyecto_id: id })));
-        if (errInsR) throw new Error("Error insertando recursos: " + errInsR.message);
-      }
-    }
-    // Reemplazar contactos
-    if (contactos !== undefined) {
-      const { error: errDelC } = await supabase.from("proyecto_contactos").delete().eq("proyecto_id", id);
-      if (errDelC) throw new Error("Error borrando contactos: " + errDelC.message);
-      if (contactos.length) {
-        const { error: errInsC } = await supabase.from("proyecto_contactos").insert(contactos.map(c => ({ ...c, proyecto_id: id })));
-        if (errInsC) throw new Error("Error insertando contactos: " + errInsC.message);
-      }
-    }
-  },
-  async eliminarProyecto(id) {
-    // FIX C3: borrar en orden correcto para evitar FK violations
-    // 1. Subtareas (dependen de proyecto_tareas)
-    const { error: e0 } = await supabase.from("proyecto_subtareas").delete().eq("proyecto_id", id);
-    if (e0) throw e0;
-    // 2. Adjuntos (pueden tener tarea_id que referencia proyecto_tareas)
-    const { error: eAdj } = await supabase.from("proyecto_adjuntos").delete().eq("proyecto_id", id);
-    if (eAdj) throw eAdj;
-    // 3. Tareas
-    const { error: e1 } = await supabase.from("proyecto_tareas").delete().eq("proyecto_id", id);
-    if (e1) throw e1;
-    // 4. Recursos y contactos
-    const { error: e2 } = await supabase.from("proyecto_recursos").delete().eq("proyecto_id", id);
-    if (e2) throw e2;
-    const { error: e3 } = await supabase.from("proyecto_contactos").delete().eq("proyecto_id", id);
-    if (e3) throw e3;
-    // 5. Proyecto
-    const { error: e4 } = await supabase.from("proyectos").delete().eq("id", id);
-    if (e4) throw e4;
-  },
-  async crearTarea(tarea) {
-    // Whitelist de columnas reales en proyecto_tareas
-    const camposPermitidos = [
-      "nombre", "owner", "responsable", "proyecto_id",
-      "fecha_inicio", "fecha_fin", "duracion_dias", "dependencias",
-      "porcentaje_avance", "status", "notas", "dias_habiles",
-    ];
-    const sanitized = {};
-    camposPermitidos.forEach(k => { if (tarea[k] !== undefined) sanitized[k] = tarea[k]; });
-    sanitized.duracion_dias = parseInt(sanitized.duracion_dias) || 1;
-    sanitized.porcentaje_avance = parseInt(sanitized.porcentaje_avance) || 0;
-    const { data, error } = await supabase.from("proyecto_tareas").insert([sanitized]).select().single();
-    if (error) throw error;
-    return data;
-  },
-  async actualizarTarea(id, cambios) {
-    // ── FIX: Whitelist de columnas reales en proyecto_tareas
-    // Evita enviar campos calculados como 'subtareas' que disparan el error de schema cache
-    const camposPermitidos = [
-      "nombre", "owner", "responsable", "proyecto_id",
-      "fecha_inicio", "fecha_fin", "duracion_dias", "dependencias",
-      "porcentaje_avance", "status", "notas", "dias_habiles",
-    ];
-    const sanitized = {};
-    camposPermitidos.forEach(k => { if (cambios[k] !== undefined) sanitized[k] = cambios[k]; });
-    sanitized.duracion_dias = parseInt(sanitized.duracion_dias) || 1;
-    sanitized.porcentaje_avance = parseInt(sanitized.porcentaje_avance) || 0;
-    const { data, error } = await supabase.from("proyecto_tareas").update(sanitized).eq("id", id).select().single();
-    if (error) throw error;
-    return data;
-  },
-  async eliminarTarea(id) {
-    // FIX C4: borrar subtareas primero para evitar FK violation
-    const { error: eSub } = await supabase.from("proyecto_subtareas").delete().eq("tarea_id", id);
-    if (eSub) throw eSub;
-    const { error } = await supabase.from("proyecto_tareas").delete().eq("id", id);
-    if (error) throw error;
-  },
-  async getAdjuntos(proyectoId) {
-    const { data, error } = await supabase.from("proyecto_adjuntos").select("*").eq("proyecto_id", proyectoId).order("created_at", { ascending: false });
-    if (error) throw error;
-    return data || [];
-  },
-  async subirAdjunto(file, proyectoId, tareaId = null) {
-    const ext = file.name.split(".").pop() || "bin";
-    const nombreLimpio = file.name
-      .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // quitar acentos
-      .replace(/[^a-zA-Z0-9._-]/g, "_")                  // reemplazar especiales
-      .replace(/_+/g, "_")                                // colapsar underscores
-      .substring(0, 80);                                  // limitar largo
-    const path = `proyectos/${proyectoId}/${Date.now()}_${nombreLimpio}`;
-    const { error: errUp } = await supabase.storage.from("proyecto-adjuntos").upload(path, file, { upsert: true, contentType: file.type || "application/octet-stream" });
-    if (errUp) throw errUp;
-    const { data: urlData } = supabase.storage.from("proyecto-adjuntos").getPublicUrl(path);
-    const adjunto = {
-      proyecto_id: proyectoId,
-      tarea_id: tareaId || null,
-      nombre: file.name,
-      url: urlData.publicUrl,
-      tipo: file.type || ext,
-      tamanio: file.size,
-    };
-    const { data, error } = await supabase.from("proyecto_adjuntos").insert([adjunto]).select().single();
-    if (error) throw error;
-    return data;
-  },
-  async eliminarAdjunto(id, url) {
-    const path = url.split("/proyecto-adjuntos/")[1];
-    if (path) await supabase.storage.from("proyecto-adjuntos").remove([path]);
-    const { error } = await supabase.from("proyecto_adjuntos").delete().eq("id", id);
-    if (error) throw error;
-  },
-  // ── Integración con módulo Compras ──
-  async crearRequisicionDesdeProjects(req, items) {
-    // FIX C1: proyecto_origen_id / tarea_origen_id se guardan en observaciones
-    // hasta que se creen las columnas en Supabase. No se incluyen en el insert.
-    const { proyecto_origen_id: _poi, tarea_origen_id: _toi, ...reqLimpio } = req;
-    const { data: nueva, error } = await supabase
-      .from("requisiciones")
-      .insert([{ ...reqLimpio, status: "pendiente_aprobacion" }])
-      .select()
-      .single();
-    if (error) throw error;
-    // FIX C2: error check en insert de items
-    if (items?.length) {
-      const { error: errItems } = await supabase.from("requisicion_items").insert(
-        items.map((it, i) => ({ ...it, requisicion_id: nueva.id, nro_linea: i + 1 }))
-      );
-      if (errItems) throw new Error("Error insertando ítems: " + errItems.message);
-    }
-    // FIX C2: error check en historial
-    const { error: errHist } = await supabase.from("requisicion_historial").insert([{
-      requisicion_id: nueva.id,
-      evento: "Requisición creada desde módulo Projects",
-      usuario: USUARIO,
-      status_nuevo: "pendiente_aprobacion",
-    }]);
-    if (errHist) throw new Error("Error en historial: " + errHist.message);
-    return nueva;
-  },
-  async getSubtareas(tareaId) {
-    const { data, error } = await supabase.from("proyecto_subtareas").select("*").eq("tarea_id", tareaId).order("fecha_inicio", { ascending: true });
-    if (error) throw error;
-    return data || [];
-  },
-  async crearSubtarea(subtarea) {
-    const { data, error } = await supabase.from("proyecto_subtareas").insert([subtarea]).select().single();
-    if (error) throw error;
-    return data;
-  },
-  async actualizarSubtarea(id, cambios) {
-    const { data, error } = await supabase.from("proyecto_subtareas").update(cambios).eq("id", id).select().single();
-    if (error) throw error;
-    return data;
-  },
-  async eliminarSubtarea(id) {
-    const { error } = await supabase.from("proyecto_subtareas").delete().eq("id", id);
-    if (error) throw error;
-  },
-};
-
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
-function calcularCaminoCritico(tareas) {
-  if (!tareas?.length) return new Set();
-  const duracion = t => Math.max(parseInt(t.duracion_dias) || 1, 1);
-  const earlyFinish = {};
-  const sorted = [...tareas].sort((a, b) => (a.fecha_inicio || "") < (b.fecha_inicio || "") ? -1 : 1);
-  sorted.forEach(t => {
-    const deps = (t.dependencias || []).map(d => earlyFinish[d] || 0);
-    earlyFinish[t.id] = (deps.length ? Math.max(...deps) : 0) + duracion(t);
-  });
-  const maxFinish = Math.max(...Object.values(earlyFinish));
-  const lateFinish = {};
-  const criticas = new Set();
-  [...sorted].reverse().forEach(t => {
-    const sucs = tareas.filter(s => (s.dependencias || []).includes(t.id));
-    lateFinish[t.id] = sucs.length ? Math.min(...sucs.map(s => lateFinish[s.id] - duracion(s))) : maxFinish;
-    if (Math.abs(lateFinish[t.id] - earlyFinish[t.id]) < 0.01) criticas.add(t.id);
-  });
-  return criticas;
-}
+// ─── SUB-COMPONENTS ─────────────────────────────────────────────────────────
 
 function Notif({ msg, onClose }) {
   if (!msg) return null;
   const cls = { success: "n-green", error: "n-red", warn: "n-amber", info: "n-blue" }[msg.type] || "n-blue";
-  return <div className={`notif ${cls}`}><span>{msg.text}</span><button onClick={onClose} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--muted)", cursor: "pointer" }}>✕</button></div>;
+  return (
+    <div className={`notif ${cls}`}>
+      <span>{msg.text}</span>
+      <button className="notif-close" onClick={onClose}>✕</button>
+    </div>
+  );
 }
 
-function FG({ label, hint, children, full }) {
-  return <div className="fg" style={full ? { gridColumn: "1/-1" } : {}}>
-    {label && <label>{label}</label>}
-    {children}
-    {hint && <div style={{ fontSize: 10, color: "var(--muted2)", marginTop: 2 }}>{hint}</div>}
-  </div>;
+function Badge({ status }) {
+  const color = STATUS_COLOR[status] || "gray";
+  return <span className={`badge b-${color}`}>{STATUS_LABELS[status] || status}</span>;
 }
 
-function PctBar({ pct, critica }) {
-  return <div className="pct-bar"><div className={`pct-fill ${critica ? "critical" : pct >= 100 ? "done" : ""}`} style={{ width: `${Math.min(pct, 100)}%` }} /></div>;
+function UrgBadge({ urgencia }) {
+  const color = { Critica: "b-red", Alta: "b-amber", Normal: "b-green" }[urgencia] || "b-gray";
+  return <span className={`badge ${color}`}><span className={`urg-dot urg-${urgencia}`} />{urgencia}</span>;
 }
 
-// ─── MODAL: COTIZAR DESDE PROJECTS ───────────────────────────────────────────
-// Se abre desde tarea o subtarea. Genera una requisición en el módulo Compras.
-function CotizarDesdeProjectsModal({ origen, proyectoEmpresa, proyectoNombre, onClose, notify }) {
-  // origen: { tipo: "tarea"|"subtarea", nombre, id, ... }
-  const empresaDefault = EMPRESAS.includes(proyectoEmpresa) ? proyectoEmpresa : "Parana Logistica";
+function KpiBar({ label, value, max, color = "var(--accent)", suffix = "" }) {
+  const pct = max ? Math.min(100, (value / max) * 100) : 0;
+  return (
+    <div className="kpi-bar-wrap">
+      <div className="kpi-bar-label">
+        <span className="text-muted">{label}</span>
+        <span className="text-mono">{value != null ? `${value}${suffix}` : "—"}</span>
+      </div>
+      <div className="kpi-bar-track">
+        <div className="kpi-bar-fill" style={{ width: `${pct}%`, background: color }} />
+      </div>
+    </div>
+  );
+}
+
+function Timeline({ historial }) {
+  if (!historial?.length) return <div className="text-muted" style={{ fontSize: 12, padding: "8px 0" }}>Sin historial</div>;
+  const iconMap = ev => {
+    if (ev.includes("creada") || ev.includes("ingresado")) return { icon: "◎", cls: "created" };
+    if (ev.includes("probado") || ev.includes("OC")) return { icon: "✓", cls: "approved" };
+    if (ev.includes("echazado") || ev.includes("evuelto")) return { icon: "✗", cls: "rejected" };
+    return { icon: "·", cls: "updated" };
+  };
+  return (
+    <ul className="timeline">
+      {[...historial].sort((a, b) => new Date(a.fecha) - new Date(b.fecha)).map((h, i) => {
+        const { icon, cls } = iconMap(h.evento);
+        return (
+          <li key={i} className="tl-item">
+            <div className={`tl-dot ${cls}`}>{icon}</div>
+            <div className="tl-content">
+              <div className="tl-evento">{h.evento}</div>
+              <div className="tl-meta">
+                <span>{fmtDate(h.fecha)}</span>
+                <span>{h.usuario}</span>
+                {h.detalle && <span style={{ color: "var(--muted2)" }}>{h.detalle}</span>}
+              </div>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// ─── FORM HELPERS ────────────────────────────────────────────────────────────
+function FG({ label, hint, children }) {
+  return (
+    <div className="fg">
+      {label && <label>{label}</label>}
+      {children}
+      {hint && <div className="field-hint">{hint}</div>}
+    </div>
+  );
+}
+
+function Select({ value, onChange, options, placeholder, disabled }) {
+  return (
+    <select value={value || ""} onChange={e => onChange(e.target.value)} disabled={disabled}>
+      {placeholder && <option value="">{placeholder}</option>}
+      {options.map(o => <option key={o.value || o} value={o.value || o}>{o.label || o}</option>)}
+    </select>
+  );
+}
+
+// ─── REQUISICION FORM (nueva / editar) ──────────────────────────────────────
+function RequisicionForm({ initial, onSave, onCancel, usuario }) {
+  const blankItem = () => ({ id: `tmp${Date.now()}${Math.random()}`, descripcion: "", cantidad: 1, unidad: "Uni", stock_disponible: 0, proveedor_sugerido: "", cantidad_aprobada: null });
+
   const [form, setForm] = useState({
-    empresa: empresaDefault,
-    base_buque: "",
-    subarea: "",
-    urgencia: "Normal",
-    tipo_requisicion: "Bienes",
-    solicitado_por: USUARIO,
-    fecha_necesaria: "",
-    // FIX C1: referencia al origen guardada en observaciones (hasta migración DB)
-    observaciones: `Generado desde proyecto: ${proyectoNombre} — ${origen.tipo === "subtarea" ? "Subtarea" : "Tarea"}: ${origen.nombre} [ref:proy=${origen.proyectoId || ""},tarea=${origen.id || ""}]`,
+    titulo: "", empresa: "Parana Logistica", base_buque: "", area: "",
+    subarea: "", detalle_tecnico: "", tipo_requisicion: "", urgencia: "Normal",
+    solicitado_por: usuario || "", fecha_necesaria: "", costo_estimado: "",
+    moneda_estimada: "ARS", busco_alternativas: false, observaciones: "",
+    ...(initial || {})
   });
-  const [items, setItems] = useState([
-    { id: "i1", descripcion: origen.nombre, cantidad: 1, unidad: "Uni", proveedor_sugerido: "" }
-  ]);
+  const [items, setItems] = useState(initial?.requisicion_items?.length ? initial.requisicion_items : [blankItem()]);
   const [saving, setSaving] = useState(false);
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  const setItem = (i, k, v) => { const its = [...items]; its[i] = { ...its[i], [k]: v }; setItems(its); };
-  const addItem = () => setItems(prev => [...prev, { id: `i${Date.now()}`, descripcion: "", cantidad: 1, unidad: "Uni", proveedor_sugerido: "" }]);
+
+  const setItem = (i, k, v) => {
+    const its = [...items];
+    its[i] = { ...its[i], [k]: v };
+    if (k === "cantidad" || k === "precio_unitario") {
+      its[i].subtotal = (parseFloat(its[i].cantidad) || 0) * (parseFloat(its[i].precio_unitario) || 0);
+    }
+    setItems(its);
+  };
 
   const bases = BASES_POR_EMPRESA[form.empresa] || [];
+  const areas = AREAS_POR_EMPRESA[form.empresa] || [];
   const subareas = SUBAREA_TECNICA[form.empresa] || [];
+  const detalles = DETALLE_TECNICO[form.subarea] || [];
 
-  const handleSave = async () => {
-    if (!form.base_buque || !form.subarea || !form.solicitado_por) {
-      alert("Completá: Base/Buque, Sub-área y Solicitado por");
+  const handleSubmit = async () => {
+    if (!form.titulo || !form.empresa || !form.base_buque || !form.area || !form.urgencia || !form.solicitado_por) {
+      alert("Completá los campos obligatorios: Título, Empresa, Base/Buque, Área, Urgencia, Solicitado por");
       return;
     }
-    if (!items.some(it => it.descripcion.trim())) {
-      alert("Agregá al menos un ítem con descripción");
+    if (!items.some(i => i.descripcion.trim())) {
+      alert("Ingresá al menos un ítem con descripción");
       return;
     }
     setSaving(true);
     try {
-      const reqData = {
-        titulo: `[Projects] ${origen.nombre}`,
-        empresa: form.empresa,
-        area: "Tecnica",
-        base_buque: form.base_buque,
-        subarea: form.subarea,
-        urgencia: form.urgencia,
-        tipo_requisicion: form.tipo_requisicion,
-        solicitado_por: form.solicitado_por,
-        fecha_necesaria: form.fecha_necesaria || null,
-        observaciones: form.observaciones,
-        // FIX C1: columnas de trazabilidad en observaciones por ahora.
-        // Una vez ejecutada la migración SQL se pueden descomentar:
-        // proyecto_origen_id: origen.proyectoId || null,
-        // tarea_origen_id: origen.id || null,
-      };
-      const cleanItems = items
-        .filter(it => it.descripcion.trim())
-        .map(({ id: _id, ...rest }) => rest);
-      const nueva = await api.crearRequisicionDesdeProjects(reqData, cleanItems);
-      // FIX A1: nro_solicitud puede ser null si es generado por trigger
-      const nroDisplay = nueva.nro_solicitud
-        ? String(nueva.nro_solicitud).padStart(4, "0")
-        : nueva.id.slice(0, 8).toUpperCase();
-      notify(`✓ Requisición REQ-${nroDisplay} creada en Compras`, "success");
-      onClose();
-    } catch (e) {
-      alert("Error al crear requisición: " + e.message);
-    } finally {
-      setSaving(false);
-    }
+      const cleanItems = items.filter(i => i.descripcion.trim()).map(({ id: _id, ...rest }) => rest);
+      await onSave({ ...form, costo_estimado: form.costo_estimado ? parseFloat(form.costo_estimado) : null }, cleanItems);
+    } finally { setSaving(false); }
   };
 
   return (
+    <div>
+      <div className="form-section">Datos de la Requisición</div>
+      <div className="form-grid">
+        <FG label="Título *"><input value={form.titulo} onChange={e => set("titulo", e.target.value)} placeholder="Ej: Compra Bujías Motor Principal" /></FG>
+        <FG label="Tipo de Requisición"><Select value={form.tipo_requisicion} onChange={v => set("tipo_requisicion", v)} options={TIPOS_REQUISICION} placeholder="Seleccionar..." /></FG>
+      </div>
+      <div className="form-grid-3">
+        <FG label="Empresa *"><Select value={form.empresa} onChange={v => { set("empresa", v); set("base_buque", ""); set("area", ""); }} options={EMPRESAS} /></FG>
+        <FG label="Base / Buque *"><Select value={form.base_buque} onChange={v => set("base_buque", v)} options={bases} placeholder="Seleccionar..." /></FG>
+        <FG label="Área *"><Select value={form.area} onChange={v => { set("area", v); set("subarea", ""); }} options={areas} placeholder="Seleccionar..." /></FG>
+      </div>
+      {form.area === "Tecnica" && (
+        <div className="form-grid">
+          <FG label="Sub-área Técnica"><Select value={form.subarea} onChange={v => { set("subarea", v); set("detalle_tecnico", ""); }} options={subareas} placeholder="Seleccionar..." /></FG>
+          {detalles.length > 0 && <FG label="Detalle Técnico"><Select value={form.detalle_tecnico} onChange={v => set("detalle_tecnico", v)} options={detalles} placeholder="Seleccionar..." /></FG>}
+        </div>
+      )}
+      <div className="form-grid">
+        <FG label="Solicitado por *"><input value={form.solicitado_por} onChange={e => set("solicitado_por", e.target.value)} /></FG>
+        <FG label="Fecha en que se necesita"><input type="date" value={form.fecha_necesaria} onChange={e => set("fecha_necesaria", e.target.value)} /></FG>
+      </div>
+      <div className="form-grid-3">
+        <FG label="Urgencia *"><Select value={form.urgencia} onChange={v => set("urgencia", v)} options={URGENCIA_OPTIONS} /></FG>
+        <FG label="Costo estimado"><input type="number" value={form.costo_estimado} onChange={e => set("costo_estimado", e.target.value)} placeholder="0" /></FG>
+        <FG label="Moneda"><Select value={form.moneda_estimada} onChange={v => set("moneda_estimada", v)} options={["ARS", "USD"]} /></FG>
+      </div>
+      <div className="form-grid">
+        <div className="checkbox-row">
+          <input type="checkbox" id="alt" checked={form.busco_alternativas} onChange={e => set("busco_alternativas", e.target.checked)} />
+          <label htmlFor="alt">Ya busqué alternativas / presupuestos previos</label>
+        </div>
+      </div>
+      <FG label="Observaciones"><textarea value={form.observaciones} onChange={e => set("observaciones", e.target.value)} placeholder="Contexto adicional, referencias, etc." /></FG>
+
+      <div className="form-section mt20">Ítems solicitados</div>
+      <div className="table-wrap">
+        <table className="items-edit">
+          <thead>
+            <tr>
+              <th style={{ width: "35%" }}>Descripción *</th>
+              <th style={{ width: "8%" }}>Cant.</th>
+              <th style={{ width: "8%" }}>Unid.</th>
+              <th style={{ width: "10%" }}>Stock disp.</th>
+              <th style={{ width: "20%" }}>Proveedor sugerido</th>
+              <th style={{ width: "12%" }}>Proyecto</th>
+              <th style={{ width: "4%" }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((it, i) => (
+              <tr key={it.id || i}>
+                <td><input value={it.descripcion} onChange={e => setItem(i, "descripcion", e.target.value)} placeholder="Descripción del ítem" /></td>
+                <td><input type="number" value={it.cantidad} onChange={e => setItem(i, "cantidad", e.target.value)} style={{ width: 60 }} /></td>
+                <td><input value={it.unidad} onChange={e => setItem(i, "unidad", e.target.value)} style={{ width: 55 }} /></td>
+                <td><input type="number" value={it.stock_disponible} onChange={e => setItem(i, "stock_disponible", e.target.value)} style={{ width: 65 }} /></td>
+                <td><input value={it.proveedor_sugerido} onChange={e => setItem(i, "proveedor_sugerido", e.target.value)} /></td>
+                <td><input value={it.proyecto || ""} onChange={e => setItem(i, "proyecto", e.target.value)} /></td>
+                <td><button className="btn btn-ghost btn-xs" onClick={() => setItems(items.filter((_, j) => j !== i))}>✕</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <button className="btn btn-ghost btn-sm mt8" onClick={() => setItems([...items, blankItem()])}>+ Agregar ítem</button>
+
+      <div className="modal-footer" style={{ marginTop: 24, padding: "16px 0 0", borderTop: "1px solid var(--border)" }}>
+        <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+        <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
+          {saving ? "Guardando..." : (initial ? "Guardar cambios" : "Crear Requisición")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── MODAL DETALLE / GESTIÓN COMPRADOR ──────────────────────────────────────
+function RequisicionModal({ req, proveedores, onClose, onUpdate, usuario }) {
+  const [tab, setTab] = useState("detalle");
+  const [gestion, setGestion] = useState({
+    revisado_por: req.revisado_por || usuario,
+    motivo_rechazo: req.motivo_rechazo || "",
+    categoria_rechazo: req.categoria_rechazo || "",
+    nro_oc: req.nro_oc || "",
+    proveedor_elegido: req.proveedor_elegido || "",
+    motivo_proveedor: req.motivo_proveedor || "",
+    costo_real: req.costo_real || "",
+    moneda_real: req.moneda_real || "ARS",
+    plazo_pago: req.plazo_pago || "",
+    fecha_entrega_prom: req.fecha_entrega_prom || "",
+    fecha_entrega_real: req.fecha_entrega_real || "",
+  });
+  const [items, setItems] = useState(req.requisicion_items || []);
+  const [saving, setSaving] = useState(false);
+
+  const setG = (k, v) => setGestion(g => ({ ...g, [k]: v }));
+
+  const setItemAp = (i, k, v) => {
+    const its = [...items];
+    its[i] = { ...its[i], [k]: v };
+    if (k === "cantidad_aprobada" || k === "precio_unitario") {
+      its[i].subtotal = (parseFloat(its[i].cantidad_aprobada ?? its[i].cantidad) || 0) * (parseFloat(its[i].precio_unitario) || 0);
+    }
+    setItems(its);
+  };
+
+  const totalReal = items.reduce((s, i) => s + (parseFloat(i.subtotal) || 0), 0);
+
+  const doAction = async (nuevoStatus, evento, extraCambios = {}) => {
+    setSaving(true);
+    try {
+      const ahora = new Date().toISOString();
+      const cambios = {
+        ...extraCambios,
+        status: nuevoStatus,
+        revisado_por: gestion.revisado_por,
+        ...(nuevoStatus === "en_revision" && !req.fecha_revision ? { fecha_revision: ahora } : {}),
+        ...(["aprobado_cotizar", "en_compra"].includes(nuevoStatus) ? { fecha_aprobacion: ahora } : {}),
+        ...(nuevoStatus === "rechazado" ? {
+          motivo_rechazo: gestion.motivo_rechazo,
+          categoria_rechazo: gestion.categoria_rechazo,
+          veces_devuelto: (req.veces_devuelto || 0) + 1,
+        } : {}),
+        ...(nuevoStatus === "en_compra" ? {
+          nro_oc: gestion.nro_oc || api.nextOcNum?.() || req.nro_oc,
+          proveedor_elegido: gestion.proveedor_elegido,
+          motivo_proveedor: gestion.motivo_proveedor,
+          costo_real: gestion.costo_real ? parseFloat(gestion.costo_real) : null,
+          moneda_real: gestion.moneda_real,
+          plazo_pago: gestion.plazo_pago,
+          fecha_entrega_prom: gestion.fecha_entrega_prom || null,
+        } : {}),
+        ...(nuevoStatus === "entregado" ? { fecha_entrega_real: gestion.fecha_entrega_real || new Date().toISOString().slice(0, 10) } : {}),
+      };
+      await api.actualizarItems(req.id, items);
+      const updated = await api.actualizarRequisicion(req.id, cambios, usuario, evento);
+      onUpdate(updated);
+      onClose();
+    } finally { setSaving(false); }
+  };
+
+  const canReview = ["pendiente_revision"].includes(req.status);
+  const canApprove = ["en_revision", "pendiente_revision"].includes(req.status);
+  const canEmitOC = req.status === "aprobado_cotizar";
+  const canDeliver = req.status === "en_compra";
+  const canReject = ["pendiente_revision", "en_revision", "aprobado_cotizar"].includes(req.status);
+
+  return (
     <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{ maxWidth: 680 }}>
-        <div className="mhdr">
+      <div className="modal">
+        <div className="modal-header">
           <div>
-            <div className="mtitle">🛒 Generar pedido de compra</div>
-            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
-              {origen.tipo === "subtarea" ? "Subtarea" : "Tarea"}: <strong>{origen.nombre}</strong>
+            <div className="modal-title text-mono">REQ-{String(req.nro_solicitud).padStart(4, "0")} — {req.titulo}</div>
+            <div className="flex-gap mt4">
+              <Badge status={req.status} />
+              <UrgBadge urgencia={req.urgencia} />
+              <span className="tag">{req.empresa}</span>
+              <span className="tag">{req.base_buque}</span>
+              {req.nro_oc && <span className="tag" style={{ color: "var(--accent)" }}>{req.nro_oc}</span>}
             </div>
           </div>
-          <button className="mclose" onClick={onClose}>✕</button>
+          <button className="modal-close" onClick={onClose}>✕</button>
         </div>
-        <div className="mbody">
 
-          <div className="info-box accent mb12" style={{ fontSize: 11 }}>
-            Se creará una requisición en el módulo Compras con estado <strong>Pendiente de aprobación</strong>.
+        <div className="modal-body" style={{ paddingBottom: 0 }}>
+          <div className="flex-gap mb16" style={{ borderBottom: "1px solid var(--border)", paddingBottom: 0, gap: 0 }}>
+            {["detalle", "gestion", "historial"].map(t => (
+              <button key={t} onClick={() => setTab(t)} className="btn btn-ghost btn-sm" style={{
+                borderRadius: "4px 4px 0 0", borderBottom: "none",
+                borderColor: tab === t ? "var(--border)" : "transparent",
+                borderBottomColor: tab === t ? "var(--surface)" : "transparent",
+                color: tab === t ? "var(--accent)" : "var(--muted)",
+                marginBottom: -1, background: tab === t ? "var(--surface)" : "transparent",
+              }}>
+                {{ detalle: "Detalle", gestion: "Gestión Comprador", historial: "Historial" }[t]}
+              </button>
+            ))}
           </div>
 
-          {/* Empresa + Base */}
-          <div className="form-grid">
-            <FG label="Empresa *">
-              <select value={form.empresa} onChange={e => { set("empresa", e.target.value); set("base_buque", ""); set("subarea", ""); }}>
-                {EMPRESAS.map(e => <option key={e}>{e}</option>)}
-              </select>
-            </FG>
-            <FG label="Base / Buque *">
-              <select value={form.base_buque} onChange={e => set("base_buque", e.target.value)}>
-                <option value="">Seleccionar...</option>
-                {bases.map(b => <option key={b}>{b}</option>)}
-              </select>
-            </FG>
-            <FG label="Sub-área *">
-              <select value={form.subarea} onChange={e => set("subarea", e.target.value)}>
-                <option value="">Seleccionar...</option>
-                {subareas.map(s => <option key={s}>{s}</option>)}
-              </select>
-            </FG>
-            <FG label="Urgencia">
-              <select value={form.urgencia} onChange={e => set("urgencia", e.target.value)}>
-                {URGENCIA_OPTIONS.map(u => <option key={u}>{u}</option>)}
-              </select>
-            </FG>
-            <FG label="Tipo de requisición">
-              <select value={form.tipo_requisicion} onChange={e => set("tipo_requisicion", e.target.value)}>
-                {TIPOS_REQUISICION_PROJECTS.map(t => <option key={t}>{t}</option>)}
-              </select>
-            </FG>
-            <FG label="Solicitado por *">
-              <input value={form.solicitado_por} onChange={e => set("solicitado_por", e.target.value)} />
-            </FG>
-            <FG label="Fecha necesaria">
-              <input type="date" value={form.fecha_necesaria} onChange={e => set("fecha_necesaria", e.target.value)} />
-            </FG>
-          </div>
-          <FG label="Observaciones" full>
-            <textarea value={form.observaciones} onChange={e => set("observaciones", e.target.value)} rows={2} />
-          </FG>
+          {/* TAB DETALLE */}
+          {tab === "detalle" && (
+            <div>
+              <div className="form-grid mb12">
+                <div className="info-box"><div className="text-muted mb8" style={{ fontSize: 11, textTransform: "uppercase", fontFamily: "var(--mono)", letterSpacing: 1 }}>Área</div>{req.area}{req.subarea ? ` › ${req.subarea}` : ""}{req.detalle_tecnico ? ` › ${req.detalle_tecnico}` : ""}</div>
+                <div className="info-box"><div className="text-muted mb8" style={{ fontSize: 11, textTransform: "uppercase", fontFamily: "var(--mono)", letterSpacing: 1 }}>Fechas</div>
+                  <div>Solicitado: <strong>{fmtDate(req.created_at)}</strong></div>
+                  {req.fecha_necesaria && <div>Necesario: <strong>{fmtDate(req.fecha_necesaria)}</strong></div>}
+                </div>
+              </div>
+              <div className="form-grid mb12">
+                <div className="info-box"><div className="text-muted mb8" style={{ fontSize: 11, textTransform: "uppercase", fontFamily: "var(--mono)", letterSpacing: 1 }}>Solicitante</div>{req.solicitado_por}</div>
+                <div className="info-box">
+                  <div className="text-muted mb8" style={{ fontSize: 11, textTransform: "uppercase", fontFamily: "var(--mono)", letterSpacing: 1 }}>Presupuesto estimado</div>
+                  {req.costo_estimado ? <strong>{fmt(req.costo_estimado, req.moneda_estimada)}</strong> : <span className="text-muted">No especificado</span>}
+                  {req.busco_alternativas && <div className="mt4" style={{ fontSize: 11, color: "var(--accent2)" }}>✓ Buscó alternativas previas</div>}
+                </div>
+              </div>
+              {req.observaciones && <div className="info-box mb12">{req.observaciones}</div>}
 
-          {/* Ítems */}
-          <div className="form-section" style={{ marginTop: 18 }}>Ítems a cotizar</div>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <div className="form-section">Ítems {canApprove ? "(editables)" : ""}</div>
+              <div className="table-wrap">
+                <table className={canApprove ? "items-edit" : ""}>
+                  <thead>
+                    <tr>
+                      <th>#</th><th>Descripción</th><th>Cant. solicitada</th><th>Unid.</th>
+                      <th>Stock</th><th>Cant. aprobada</th><th>Precio unit.</th><th>Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((it, i) => (
+                      <tr key={i}>
+                        <td className="text-muted text-mono">{it.nro_linea}</td>
+                        <td>{it.descripcion}</td>
+                        <td className="text-mono">{it.cantidad}</td>
+                        <td className="text-muted">{it.unidad}</td>
+                        <td className="text-mono">{it.stock_disponible || 0}</td>
+                        <td>
+                          {canApprove
+                            ? <input type="number" value={it.cantidad_aprobada ?? ""} onChange={e => setItemAp(i, "cantidad_aprobada", e.target.value)} placeholder={it.cantidad} style={{ width: 70 }} />
+                            : <span className="text-mono">{it.cantidad_aprobada ?? <span className="text-muted">—</span>}</span>}
+                        </td>
+                        <td>
+                          {canEmitOC
+                            ? <input type="number" value={it.precio_unitario ?? ""} onChange={e => setItemAp(i, "precio_unitario", e.target.value)} style={{ width: 90 }} />
+                            : <span className="text-mono">{it.precio_unitario ? fmt(it.precio_unitario) : "—"}</span>}
+                        </td>
+                        <td className="text-mono">{it.subtotal ? fmt(it.subtotal) : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  {totalReal > 0 && (
+                    <tfoot>
+                      <tr>
+                        <td colSpan={7} className="text-right text-mono" style={{ fontWeight: 600, paddingTop: 10 }}>TOTAL</td>
+                        <td className="text-mono" style={{ fontWeight: 700, color: "var(--accent)" }}>{fmt(totalReal, gestion.moneda_real)}</td>
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* TAB GESTIÓN */}
+          {tab === "gestion" && (
+            <div>
+              {canReject && (
+                <>
+                  <div className="form-section">Rechazo / Devolución</div>
+                  <div className="form-grid">
+                    <FG label="Categoría de rechazo"><Select value={gestion.categoria_rechazo} onChange={v => setG("categoria_rechazo", v)} options={CATEGORIAS_RECHAZO} placeholder="Seleccionar..." /></FG>
+                    <FG label="Motivo detallado"><input value={gestion.motivo_rechazo} onChange={e => setG("motivo_rechazo", e.target.value)} placeholder="Explicar qué falta o qué está mal" /></FG>
+                  </div>
+                </>
+              )}
+
+              {(canEmitOC || req.status === "en_compra") && (
+                <>
+                  <div className="form-section">Orden de Compra</div>
+                  <div className="form-grid">
+                    <FG label="N° OC"><input value={gestion.nro_oc} onChange={e => setG("nro_oc", e.target.value)} placeholder="OC-0001" /></FG>
+                    <FG label="Proveedor elegido">
+                      <select value={gestion.proveedor_elegido} onChange={e => setG("proveedor_elegido", e.target.value)}>
+                        <option value="">Seleccionar o escribir...</option>
+                        {proveedores.map(p => <option key={p.id} value={p.nombre}>{p.nombre}</option>)}
+                      </select>
+                    </FG>
+                  </div>
+                  <FG label="Justificación elección proveedor" hint="¿Por qué este proveedor? (precio, disponibilidad, calidad, relación comercial)">
+                    <textarea value={gestion.motivo_proveedor} onChange={e => setG("motivo_proveedor", e.target.value)} />
+                  </FG>
+                  <div className="form-grid-3">
+                    <FG label="Costo real"><input type="number" value={gestion.costo_real} onChange={e => setG("costo_real", e.target.value)} /></FG>
+                    <FG label="Moneda"><Select value={gestion.moneda_real} onChange={v => setG("moneda_real", v)} options={["ARS", "USD"]} /></FG>
+                    <FG label="Plazo de pago"><Select value={gestion.plazo_pago} onChange={v => setG("plazo_pago", v)} options={PLAZO_PAGO_OPTIONS} placeholder="Seleccionar..." /></FG>
+                  </div>
+                  <div className="form-grid">
+                    <FG label="Fecha entrega prometida"><input type="date" value={gestion.fecha_entrega_prom} onChange={e => setG("fecha_entrega_prom", e.target.value)} /></FG>
+                    {req.status === "en_compra" && <FG label="Fecha entrega real"><input type="date" value={gestion.fecha_entrega_real} onChange={e => setG("fecha_entrega_real", e.target.value)} /></FG>}
+                  </div>
+
+                  {req.costo_estimado && gestion.costo_real && (
+                    <div className="info-box accent mt8">
+                      Desvío presupuestario: <strong style={{ color: parseFloat(gestion.costo_real) > req.costo_estimado ? "var(--danger)" : "var(--accent2)" }}>
+                        {((parseFloat(gestion.costo_real) - req.costo_estimado) / req.costo_estimado * 100).toFixed(1)}%
+                      </strong>
+                      {" "}({fmt(req.costo_estimado, req.moneda_estimada)} estimado → {fmt(parseFloat(gestion.costo_real), gestion.moneda_real)} real)
+                    </div>
+                  )}
+                </>
+              )}
+
+              {req.status === "en_compra" && (
+                <>
+                  <div className="form-section mt16">Recepción</div>
+                  <FG label="Fecha de entrega real"><input type="date" value={gestion.fecha_entrega_real} onChange={e => setG("fecha_entrega_real", e.target.value)} /></FG>
+                </>
+              )}
+
+              {["cerrado", "entregado"].includes(req.status) && (
+                <div className="info-box mt8">Esta requisición está cerrada. Solo lectura.</div>
+              )}
+            </div>
+          )}
+
+          {/* TAB HISTORIAL */}
+          {tab === "historial" && (
+            <div>
+              <Timeline historial={req.requisicion_historial} />
+              {req.veces_devuelto > 0 && (
+                <div className="info-box mt16" style={{ borderLeft: "3px solid var(--warn)" }}>
+                  ⚠ Esta requisición fue devuelta <strong>{req.veces_devuelto} vez{req.veces_devuelto > 1 ? "ces" : ""}</strong>
+                  {req.categoria_rechazo && ` — Categoría: ${req.categoria_rechazo}`}
+                </div>
+              )}
+              {req.dias_solicitud_revision != null && (
+                <div className="mt16">
+                  <KpiBar label="Solicitud → Revisión" value={req.dias_solicitud_revision} max={10} color="var(--accent)" suffix=" días" />
+                  <KpiBar label="Revisión → Aprobación" value={req.dias_revision_aprobacion} max={5} color="var(--accent2)" suffix=" días" />
+                  <KpiBar label="Aprobación → Entrega" value={req.dias_aprobacion_entrega} max={30} color="var(--warn)" suffix=" días" />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="modal-footer">
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>Cerrar</button>
+          {canReject && <button className="btn btn-danger btn-sm" onClick={() => doAction("rechazado", `Devuelto — ${gestion.categoria_rechazo || "Sin categoría"}`)} disabled={saving || !gestion.motivo_rechazo}>Rechazar / Devolver</button>}
+          {canReview && <button className="btn btn-warn btn-sm" onClick={() => doAction("en_revision", "Marcado en revisión")} disabled={saving}>Tomar revisión</button>}
+          {canApprove && <button className="btn btn-primary btn-sm" onClick={() => doAction("aprobado_cotizar", "Aprobado para cotizar")} disabled={saving}>Aprobar para cotizar</button>}
+          {canEmitOC && <button className="btn btn-success btn-sm" onClick={() => doAction("en_compra", `OC emitida — ${gestion.nro_oc || "pendiente"}`, { nro_oc: gestion.nro_oc || api.nextOcNum?.() })} disabled={saving || !gestion.proveedor_elegido}>Emitir OC</button>}
+          {canDeliver && <button className="btn btn-success btn-sm" onClick={() => doAction("entregado", "Entrega confirmada")} disabled={saving}>Confirmar entrega</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── PAGE: LISTA DE REQUISICIONES ───────────────────────────────────────────
+function PageRequisiciones({ onNew, notify, usuario }) {
+  const [reqs, setReqs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState(null);
+  const [proveedores, setProveedores] = useState([]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [data, provs] = await Promise.all([api.getRequisiciones(), api.getProveedores()]);
+      setReqs(data);
+      setProveedores(provs);
+    } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const filtered = reqs.filter(r => {
+    if (filter !== "all" && r.status !== filter) return false;
+    if (search) {
+      const s = search.toLowerCase();
+      return r.titulo?.toLowerCase().includes(s) || r.solicitado_por?.toLowerCase().includes(s) ||
+        r.empresa?.toLowerCase().includes(s) || r.base_buque?.toLowerCase().includes(s) ||
+        r.nro_oc?.toLowerCase().includes(s);
+    }
+    return true;
+  });
+
+  const counts = {};
+  reqs.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
+  const pendientes = (counts.pendiente_revision || 0) + (counts.en_revision || 0);
+
+  const handleUpdate = (updated) => {
+    setReqs(prev => prev.map(r => r.id === updated.id ? { ...r, ...updated } : r));
+    notify("Requisición actualizada", "success");
+  };
+
+  const filterOptions = [
+    { k: "all", label: "Todas" },
+    { k: "pendiente_revision", label: "Pendientes" },
+    { k: "en_revision", label: "En revisión" },
+    { k: "aprobado_cotizar", label: "Aprobadas" },
+    { k: "en_compra", label: "En compra" },
+    { k: "entregado", label: "Entregadas" },
+    { k: "rechazado", label: "Rechazadas" },
+  ];
+
+  return (
+    <div>
+      <div className="stats">
+        <div className="stat"><div className="stat-label">Total</div><div className="stat-value v-blue">{reqs.length}</div></div>
+        <div className="stat"><div className="stat-label">Por revisar</div><div className="stat-value v-amber">{pendientes}</div><div className="stat-sub">Requieren acción</div></div>
+        <div className="stat"><div className="stat-label">En compra</div><div className="stat-value v-purple">{counts.en_compra || 0}</div></div>
+        <div className="stat"><div className="stat-label">Entregadas</div><div className="stat-value v-green">{(counts.entregado || 0) + (counts.cerrado || 0)}</div></div>
+      </div>
+
+      <div className="card">
+        <div className="flex-between mb12">
+          <div className="filters" style={{ margin: 0 }}>
+            {filterOptions.map(f => (
+              <span key={f.k} className={`filter-chip ${filter === f.k ? "active" : ""}`} onClick={() => setFilter(f.k)}>
+                {f.label}{f.k !== "all" && counts[f.k] ? ` (${counts[f.k]})` : ""}
+              </span>
+            ))}
+          </div>
+          <div className="flex-gap">
+            <input className="search-input" placeholder="Buscar..." value={search} onChange={e => setSearch(e.target.value)} />
+            <button className="btn btn-primary" onClick={onNew}>+ Nueva</button>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="loading"><span className="spin">◌</span> Cargando...</div>
+        ) : filtered.length === 0 ? (
+          <div className="empty-state"><div className="empty-icon">📭</div><div>Sin requisiciones</div></div>
+        ) : (
+          <div className="table-wrap">
+            <table>
               <thead>
-                <tr style={{ background: "var(--surface2)" }}>
-                  <th style={{ padding: "7px 10px", textAlign: "left", fontSize: 10, color: "var(--muted)", fontWeight: 600, letterSpacing: .5, textTransform: "uppercase", borderBottom: "2px solid var(--border)", width: "50%" }}>Descripción *</th>
-                  <th style={{ padding: "7px 10px", textAlign: "left", fontSize: 10, color: "var(--muted)", fontWeight: 600, letterSpacing: .5, textTransform: "uppercase", borderBottom: "2px solid var(--border)" }}>Cant.</th>
-                  <th style={{ padding: "7px 10px", textAlign: "left", fontSize: 10, color: "var(--muted)", fontWeight: 600, letterSpacing: .5, textTransform: "uppercase", borderBottom: "2px solid var(--border)" }}>Unid.</th>
-                  <th style={{ padding: "7px 10px", borderBottom: "2px solid var(--border)" }}></th>
+                <tr>
+                  <th>N°</th><th>Título</th><th>Empresa / Buque</th><th>Área</th>
+                  <th>Urgencia</th><th>Solicitado</th><th>Fecha</th>
+                  <th>Estimado</th><th>Real</th><th>Status</th><th></th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((it, i) => (
-                  <tr key={it.id}>
-                    <td style={{ padding: "5px 8px", borderBottom: "1px solid var(--border)" }}>
-                      <input
-                        value={it.descripcion}
-                        onChange={e => setItem(i, "descripcion", e.target.value)}
-                        placeholder="Descripción del material o servicio"
-                        style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r)", padding: "5px 8px", fontFamily: "var(--sans)", fontSize: 12, outline: "none" }}
-                      />
+                {filtered.map(r => (
+                  <tr key={r.id} className="tr-clickable" onClick={() => setSelected(r)}>
+                    <td className="text-mono" style={{ color: "var(--accent)", fontSize: 12 }}>
+                      {String(r.nro_solicitud).padStart(4, "0")}
+                      {r.nro_oc && <div style={{ fontSize: 10, color: "var(--muted)" }}>{r.nro_oc}</div>}
                     </td>
-                    <td style={{ padding: "5px 8px", borderBottom: "1px solid var(--border)" }}>
-                      <input
-                        type="number" min={1} value={it.cantidad}
-                        onChange={e => setItem(i, "cantidad", parseInt(e.target.value) || 1)}
-                        style={{ width: 60, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r)", padding: "5px 8px", fontFamily: "var(--mono)", fontSize: 12, outline: "none" }}
-                      />
+                    <td style={{ maxWidth: 200 }}>
+                      <div style={{ fontWeight: 500 }}>{r.titulo}</div>
+                      {r.veces_devuelto > 0 && <span style={{ fontSize: 10, color: "var(--warn)" }}>↩ {r.veces_devuelto}x devuelto</span>}
                     </td>
-                    <td style={{ padding: "5px 8px", borderBottom: "1px solid var(--border)" }}>
-                      <input
-                        value={it.unidad}
-                        onChange={e => setItem(i, "unidad", e.target.value)}
-                        style={{ width: 60, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r)", padding: "5px 8px", fontFamily: "var(--mono)", fontSize: 12, outline: "none" }}
-                      />
-                    </td>
-                    <td style={{ padding: "5px 8px", borderBottom: "1px solid var(--border)" }}>
-                      {items.length > 1 && (
-                        <button
-                          onClick={() => setItems(prev => prev.filter((_, j) => j !== i))}
-                          style={{ background: "none", border: "none", color: "var(--muted2)", cursor: "pointer", fontSize: 13 }}
-                          onMouseEnter={e => e.currentTarget.style.color = "var(--danger)"}
-                          onMouseLeave={e => e.currentTarget.style.color = "var(--muted2)"}
-                        >✕</button>
-                      )}
-                    </td>
+                    <td style={{ fontSize: 12 }}><div>{r.empresa}</div><div className="text-muted">{r.base_buque}</div></td>
+                    <td style={{ fontSize: 12 }}>{r.area}{r.subarea ? <div className="text-muted">{r.subarea}</div> : null}</td>
+                    <td><UrgBadge urgencia={r.urgencia} /></td>
+                    <td style={{ fontSize: 12 }}>{r.solicitado_por}</td>
+                    <td className="text-mono text-muted" style={{ fontSize: 11 }}>{fmtDate(r.created_at)}</td>
+                    <td className="text-mono" style={{ fontSize: 12 }}>{r.costo_estimado ? fmt(r.costo_estimado, r.moneda_estimada) : <span className="text-muted">—</span>}</td>
+                    <td className="text-mono" style={{ fontSize: 12 }}>{r.costo_real ? fmt(r.costo_real, r.moneda_real) : <span className="text-muted">—</span>}</td>
+                    <td><Badge status={r.status} /></td>
+                    <td><button className="btn btn-ghost btn-xs" onClick={e => { e.stopPropagation(); setSelected(r); }}>→</button></td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <button className="btn btn-ghost btn-sm mt8" onClick={addItem}>+ Agregar ítem</button>
-
-        </div>
-        <div className="mftr">
-          <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
-          <button
-            className="btn btn-cotizar"
-            onClick={handleSave}
-            disabled={saving}
-          >
-            {saving ? "Creando..." : "🛒 Crear pedido de compra"}
-          </button>
-        </div>
+        )}
       </div>
+
+      {selected && (
+        <RequisicionModal
+          req={selected}
+          proveedores={proveedores}
+          usuario={usuario}
+          onClose={() => setSelected(null)}
+          onUpdate={r => { handleUpdate(r); setSelected(null); }}
+        />
+      )}
     </div>
   );
 }
 
-// ─── MODAL PROYECTO ───────────────────────────────────────────────────────────
-function ProyectoModal({ proyecto, onClose, onSave }) {
-  const [form, setForm] = useState({
-    empresa: "Parana Logistica", nombre: "", tipo: "interno", cliente: "",
-    descripcion: "", fecha_inicio: "", fecha_fin: "", responsable: "", status: "planificado",
-    ...(proyecto || {}),
-  });
+// ─── PAGE: NUEVA REQUISICIÓN ─────────────────────────────────────────────────
+function PageNueva({ onSaved, onCancel, notify, usuario, fromExcel }) {
+  const fileRef = useRef();
+  const [excelItems, setExcelItems] = useState(fromExcel || null);
+  const [drag, setDrag] = useState(false);
 
-  // Recursos: array de strings (nombres)
-  const [recursos, setRecursos] = useState(proyecto?.proyecto_recursos?.map(r => r.nombre) || []);
-  // Contactos: array de {nombre, email}
-  const [contactos, setContactos] = useState(proyecto?.proyecto_contactos || []);
-  // Catálogo de recursos desde Supabase
-  const [recursosCatalogo, setRecursosCatalogo] = useState([]);
-  // Perfiles desde Supabase
-  const [perfiles, setPerfiles] = useState([]);
-  // Estado para agregar recurso manual
-  const [nuevoRecursoManual, setNuevoRecursoManual] = useState("");
-  const [agregandoRecurso, setAgregandoRecurso] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const handleFile = async (file) => {
+    if (!file) return;
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+      const items = rows.map(r => ({
+        descripcion: String(r["Descripcion"] || r["Descripción"] || r["descripcion"] || r["Item"] || Object.values(r)[2] || "").trim(),
+        cantidad: parseFloat(r["Cant."] || r["Cantidad"] || r["cantidad"] || 1) || 1,
+        unidad: String(r["Unid."] || r["Unidad"] || r["unidad"] || "Uni"),
+        stock_disponible: parseFloat(r["Stock"] || 0) || 0,
+        proveedor_sugerido: String(r["Proveedor Sugerido"] || r["proveedor_sugerido"] || ""),
+        proyecto: String(r["Proyecto"] || r["proyecto"] || ""),
+      })).filter(i => i.descripcion);
+      if (!items.length) { notify("No se encontraron ítems en el Excel", "error"); return; }
+      setExcelItems(items);
+      notify(`${items.length} ítems importados del Excel`, "success");
+    } catch { notify("Error al leer el Excel", "error"); }
+  };
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const handleSave = async (form, items) => {
+    const created = await api.crearRequisicion(form, items, usuario);
+    notify(`Requisición REQ-${String(created.nro_solicitud).padStart(4, "0")} creada`, "success");
+    onSaved();
+  };
 
-  useEffect(() => {
-    Promise.all([api.getPerfiles(), api.getRecursosCatalogo()])
-      .then(([p, r]) => { setPerfiles(p); setRecursosCatalogo(r); })
-      .catch(e => console.error("Error cargando catálogos:", e));
-  }, []);
-
-  // ── Recursos ──
-  const toggleRecurso = (nombre) => {
-    setRecursos(prev =>
-      prev.includes(nombre) ? prev.filter(r => r !== nombre) : [...prev, nombre]
+  if (excelItems !== null) {
+    return (
+      <div className="card">
+        <div className="card-title">Nueva Requisición — {excelItems.length} ítems desde Excel</div>
+        <RequisicionForm
+          initial={{ requisicion_items: excelItems }}
+          onSave={handleSave}
+          onCancel={onCancel}
+          usuario={usuario}
+        />
+      </div>
     );
-  };
-
-  const handleAgregarRecursoManual = async () => {
-    const nombre = nuevoRecursoManual.trim();
-    if (!nombre) return;
-    setAgregandoRecurso(true);
-    try {
-      const nuevo = await api.agregarRecursoCatalogo(nombre);
-      setRecursosCatalogo(prev => [...prev, nuevo]);
-      setRecursos(prev => [...prev, nuevo.nombre]);
-      setNuevoRecursoManual("");
-    } catch (e) {
-      // Si ya existe, simplemente agregarlo a la selección
-      if (!recursos.includes(nombre)) setRecursos(prev => [...prev, nombre]);
-      setNuevoRecursoManual("");
-    } finally { setAgregandoRecurso(false); }
-  };
-
-  // ── Contactos ──
-  const addContacto = () => setContactos(prev => [...prev, { nombre: "", email: "" }]);
-  const setContacto = (i, k, v) => {
-    const arr = [...contactos];
-    arr[i] = { ...arr[i], [k]: v };
-    setContactos(arr);
-  };
-  const removeContacto = (i) => setContactos(prev => prev.filter((_, j) => j !== i));
-
-  const handleSave = async () => {
-    if (!form.nombre || !form.empresa) return alert("Completá nombre y empresa");
-    setSaving(true);
-    try {
-      const contactosValidos = contactos.filter(c => c.nombre?.trim() || c.email?.trim());
-      if (proyecto) {
-        await api.actualizarProyecto(proyecto.id, form, recursos, contactosValidos);
-      } else {
-        await api.crearProyecto(form, recursos, contactosValidos);
-      }
-      onSave();
-    } catch (e) { alert("Error: " + (e.message || JSON.stringify(e))); }
-    finally { setSaving(false); }
-  };
+  }
 
   return (
-    <div className="overlay">
-      <div className="modal">
-        <div className="mhdr">
-          <div className="mtitle">{proyecto ? "Editar proyecto" : "Nuevo proyecto"}</div>
-          <button className="mclose" onClick={onClose}>✕</button>
+    <div>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-title">Importar desde Excel</div>
+        <div
+          className={`upload-zone ${drag ? "drag" : ""}`}
+          onDragOver={e => { e.preventDefault(); setDrag(true); }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={e => { e.preventDefault(); setDrag(false); handleFile(e.dataTransfer.files[0]); }}
+          onClick={() => fileRef.current.click()}
+        >
+          <div className="upload-icon">📥</div>
+          <div className="upload-title">Arrastrá el Excel de requisición acá</div>
+          <div className="upload-sub">o hacé click para seleccionar · .xlsx / .xls</div>
+          <div className="upload-sub mt4" style={{ fontSize: 11, color: "var(--muted2)" }}>Columnas: N° · Cant. · Unid. · Descripción · Stock · Proveedor Sugerido</div>
         </div>
-        <div className="mbody">
+        <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={e => handleFile(e.target.files[0])} />
+      </div>
 
-          {/* ── Datos generales ── */}
-          <div className="form-section">Datos generales</div>
-          <div className="form-grid">
-            <FG label="Empresa *">
-              <select value={form.empresa} onChange={e => set("empresa", e.target.value)}>
-                {EMPRESAS.map(e => <option key={e}>{e}</option>)}
-              </select>
-            </FG>
-            <FG label="Tipo">
-              <select value={form.tipo} onChange={e => set("tipo", e.target.value)}>
-                <option value="interno">Interno</option>
-                <option value="externo">Externo</option>
-              </select>
-            </FG>
-          </div>
-          <div className="form-grid">
-            <FG label="Nombre *" full>
-              <input value={form.nombre} onChange={e => set("nombre", e.target.value)} placeholder="Ej: Varada Golondrina 2026" />
-            </FG>
-          </div>
-          <div className="form-grid">
-            <FG label="Cliente (opcional)">
-              <input value={form.cliente || ""} onChange={e => set("cliente", e.target.value)} placeholder="Ej: Fugro" />
-            </FG>
-            <FG label="Responsable">
-              <select value={form.responsable || ""} onChange={e => set("responsable", e.target.value)}>
-                <option value="">Sin asignar</option>
-                {perfiles.map(p => (
-                  <option key={p.id} value={p.nombre}>{p.nombre}</option>
-                ))}
-              </select>
-            </FG>
-            <FG label="Fecha inicio">
-              <input type="date" value={form.fecha_inicio || ""} onChange={e => set("fecha_inicio", e.target.value)} />
-            </FG>
-            <FG label="Fecha fin estimada">
-              <input type="date" value={form.fecha_fin || ""} onChange={e => set("fecha_fin", e.target.value)} />
-            </FG>
-          </div>
-          <div className="form-grid">
-            <FG label="Status">
-              <select value={form.status} onChange={e => set("status", e.target.value)}>
-                {Object.entries(STATUS_PROYECTO).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-              </select>
-            </FG>
-          </div>
-          <FG label="Descripción" full>
-            <textarea value={form.descripcion || ""} onChange={e => set("descripcion", e.target.value)} placeholder="Descripción del proyecto..." />
-          </FG>
-
-          {/* ── Contactos de cliente ── */}
-          <div className="form-section">Contactos de cliente</div>
-          {contactos.length === 0 && (
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>Sin contactos — opcional</div>
-          )}
-          {contactos.map((c, i) => (
-            <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 10, marginBottom: 8, alignItems: "end" }}>
-              <FG label={i === 0 ? "Nombre" : ""}>
-                <input value={c.nombre || ""} onChange={e => setContacto(i, "nombre", e.target.value)} placeholder="Ej: Juan Pérez" />
-              </FG>
-              <FG label={i === 0 ? "Email" : ""}>
-                <input type="email" value={c.email || ""} onChange={e => setContacto(i, "email", e.target.value)} placeholder="juan@empresa.com" />
-              </FG>
-              <button
-                onClick={() => removeContacto(i)}
-                style={{ background: "none", border: "1px solid var(--border)", borderRadius: "var(--r)", color: "var(--muted2)", cursor: "pointer", fontSize: 14, padding: "8px 10px", marginBottom: 1 }}
-                onMouseEnter={e => e.currentTarget.style.color = "var(--danger)"}
-                onMouseLeave={e => e.currentTarget.style.color = "var(--muted2)"}
-              >✕</button>
-            </div>
-          ))}
-          <button className="btn btn-ghost btn-sm" onClick={addContacto}>+ Agregar contacto</button>
-
-          {/* ── Recursos asignados ── */}
-          <div className="form-section">Recursos asignados</div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-            {recursosCatalogo.map(r => (
-              <div
-                key={r.id}
-                onClick={() => toggleRecurso(r.nombre)}
-                style={{
-                  display: "inline-flex", alignItems: "center", gap: 5,
-                  background: recursos.includes(r.nombre) ? "var(--blue)" : "var(--surface2)",
-                  color: recursos.includes(r.nombre) ? "#fff" : "var(--muted)",
-                  border: `1px solid ${recursos.includes(r.nombre) ? "var(--blue)" : "var(--border)"}`,
-                  borderRadius: 4, padding: "4px 10px", fontSize: 11, fontWeight: 600,
-                  cursor: "pointer", transition: "all .12s", userSelect: "none",
-                }}
-              >
-                {recursos.includes(r.nombre) ? "✓ " : ""}{r.nombre}
-              </div>
-            ))}
-          </div>
-          {/* Agregar recurso manual */}
-          <div className="flex-gap">
-            <input
-              value={nuevoRecursoManual}
-              onChange={e => setNuevoRecursoManual(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleAgregarRecursoManual()}
-              placeholder="Agregar recurso nuevo..."
-              style={{ flex: 1, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r)", padding: "7px 10px", fontSize: 12, fontFamily: "var(--sans)", outline: "none" }}
-            />
-            <button className="btn btn-ghost btn-sm" onClick={handleAgregarRecursoManual} disabled={agregandoRecurso || !nuevoRecursoManual.trim()}>
-              {agregandoRecurso ? "..." : "+ Agregar"}
-            </button>
-          </div>
-          <div style={{ fontSize: 10, color: "var(--muted2)", marginTop: 6 }}>
-            Los recursos nuevos se guardan en el catálogo para usar en futuros proyectos.
-          </div>
-
-        </div>
-        <div className="mftr">
-          <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? "Guardando..." : "Guardar proyecto"}</button>
-        </div>
+      <div className="card">
+        <div className="card-title">O cargar manualmente</div>
+        <RequisicionForm onSave={handleSave} onCancel={onCancel} usuario={usuario} />
       </div>
     </div>
   );
 }
 
-// ─── MODAL TAREA ──────────────────────────────────────────────────────────────
-function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar, notify }) {
-  const parseDias = (d) => Array.isArray(d) && d.length === 7 ? d : [...DIAS_DEFAULT];
-  const [form, setForm] = useState({
-    proyecto_id: proyectoId, nombre: "", owner: "", responsable: "",
-    fecha_inicio: "", fecha_fin: "", duracion_dias: 1, dependencias: [],
-    porcentaje_avance: 0, status: "pendiente", notas: "", dias_habiles: [...DIAS_DEFAULT],
-    ...(tarea || {}),
-    dias_habiles: parseDias(tarea?.dias_habiles),
-    duracion_dias: parseInt(tarea?.duracion_dias) || 1,
-    porcentaje_avance: parseInt(tarea?.porcentaje_avance) || 0,
-  });
-  const [perfiles, setPerfiles]         = useState([]);
-  const [subtareas, setSubtareas]       = useState([]);
-  const [saving, setSaving]             = useState(false);
-  const [savingSubtarea, setSavingSubtarea] = useState(false);
-  const [confirmEliminar, setConfirmEliminar] = useState(false);
-  const [tabModal, setTabModal]         = useState(tarea?._openSubtarea ? "subtareas" : "datos");
-  const [editSubtareaId, setEditSubtareaId] = useState(null);
-  const [subForm, setSubForm]           = useState({ descripcion: "", fecha_inicio: "", fecha_fin: "", porcentaje_avance: 0, responsable: "" });
-  const [cotizarOrigen, setCotizarOrigen] = useState(null); // { tipo, nombre, id, proyectoId }
-
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  const setSub = (k, v) => setSubForm(f => ({ ...f, [k]: v }));
+// ─── PAGE: KPIs / REPORTES ───────────────────────────────────────────────────
+function PageReportes() {
+  const [reqs, setReqs] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.getPerfiles().then(setPerfiles).catch(e => console.error("Perfiles:", e));
-    if (tarea?.id) {
-      api.getSubtareas(tarea.id).then(subs => {
-        setSubtareas(subs);
-        // Si se abrió desde el gantt con una subtarea específica, pre-cargar para editar
-        if (tarea._openSubtarea) {
-          const s = tarea._openSubtarea;
-          setEditSubtareaId(s.id);
-          setSubForm({ descripcion: s.descripcion, fecha_inicio: s.fecha_inicio || "", fecha_fin: s.fecha_fin || "", porcentaje_avance: s.porcentaje_avance || 0, responsable: s.responsable || "" });
-        }
-      }).catch(e => console.error("Subtareas:", e));
-    }
-  }, [tarea?.id]);
-
-  // Bloquear cierre accidental con Escape o Delete fuera de inputs
-  useEffect(() => {
-    const handler = (e) => {
-      const tag = document.activeElement?.tagName?.toLowerCase();
-      const enInput = ["input", "textarea", "select"].includes(tag);
-      if ((e.key === "Escape" || e.key === "Delete") && !enInput) {
-        e.stopPropagation();
-        e.preventDefault();
-      }
-    };
-    window.addEventListener("keydown", handler, true);
-    return () => window.removeEventListener("keydown", handler, true);
+    api.getRequisiciones().then(d => { setReqs(d); setLoading(false); });
   }, []);
 
-  useEffect(() => {
-    const fin = calcFechaFin(form.fecha_inicio, form.duracion_dias, form.dias_habiles);
-    if (fin) set("fecha_fin", fin);
-  }, [form.fecha_inicio, form.duracion_dias, JSON.stringify(form.dias_habiles)]);
+  if (loading) return <div className="loading"><span className="spin">◌</span> Cargando reportes...</div>;
 
-  const toggleDia = (i) => { const dias = [...form.dias_habiles]; dias[i] = !dias[i]; set("dias_habiles", dias); };
-  const toggleDep = (id) => {
-    const deps = form.dependencias || [];
-    set("dependencias", deps.includes(id) ? deps.filter(d => d !== id) : [...deps, id]);
-  };
+  const total = reqs.length;
+  const urgencias = reqs.filter(r => r.urgencia === "Critica").length;
+  const pctUrgencias = total ? Math.round(urgencias / total * 100) : 0;
+  const rechazadas = reqs.filter(r => r.status === "rechazado").length;
+  const conIdaVuelta = reqs.filter(r => r.veces_devuelto > 0).length;
+  const avgRevision = reqs.filter(r => r.dias_solicitud_revision != null).reduce((s, r) => s + r.dias_solicitud_revision, 0) / (reqs.filter(r => r.dias_solicitud_revision != null).length || 1);
 
-  const handleSave = async () => {
-    if (!form.nombre) return alert("El nombre es obligatorio");
-    if (!form.dias_habiles.some(d => d)) return alert("Seleccioná al menos un día hábil");
-    setSaving(true);
-    try {
-      tarea?.id ? await api.actualizarTarea(tarea.id, form) : await api.crearTarea(form);
-      onSave();
-    } catch (e) { alert("Error: " + e.message); }
-    finally { setSaving(false); }
-  };
-
-  // ── Subtareas ──
-  const blankSubForm = () => ({ descripcion: "", fecha_inicio: form.fecha_inicio || "", fecha_fin: form.fecha_fin || "", porcentaje_avance: 0, responsable: "" });
-
-  const handleGuardarSubtarea = async () => {
-    if (!subForm.descripcion.trim()) return alert("La descripción es obligatoria");
-    // Validar que fechas estén dentro de la tarea madre
-    if (form.fecha_inicio && subForm.fecha_inicio && subForm.fecha_inicio < form.fecha_inicio)
-      return alert(`La fecha de inicio no puede ser anterior a la tarea madre (${fmtDate(form.fecha_inicio)})`);
-    if (form.fecha_fin && subForm.fecha_fin && subForm.fecha_fin > form.fecha_fin)
-      return alert(`La fecha de fin no puede ser posterior a la tarea madre (${fmtDate(form.fecha_fin)})`);
-    setSavingSubtarea(true);
-    try {
-      if (editSubtareaId) {
-        const updated = await api.actualizarSubtarea(editSubtareaId, subForm);
-        setSubtareas(prev => prev.map(s => s.id === editSubtareaId ? updated : s));
-      } else {
-        const nueva = await api.crearSubtarea({ ...subForm, tarea_id: tarea.id, proyecto_id: proyectoId });
-        setSubtareas(prev => [...prev, nueva]);
-      }
-      setSubForm(blankSubForm());
-      setEditSubtareaId(null);
-    } catch (e) { alert("Error: " + e.message); }
-    finally { setSavingSubtarea(false); }
-  };
-
-  const handleEditarSubtarea = (s) => {
-    setEditSubtareaId(s.id);
-    setSubForm({ descripcion: s.descripcion, fecha_inicio: s.fecha_inicio || "", fecha_fin: s.fecha_fin || "", porcentaje_avance: s.porcentaje_avance || 0, responsable: s.responsable || "" });
-  };
-
-  const handleEliminarSubtarea = async (id) => {
-    if (!window.confirm("¿Eliminar esta subtarea?")) return;
-    await api.eliminarSubtarea(id);
-    setSubtareas(prev => prev.filter(s => s.id !== id));
-  };
-
-  const otrasTareas = tareas.filter(t => t.id !== tarea?.id);
-
-  const inStyle = { background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r)", color: "var(--text)", fontFamily: "var(--sans)", fontSize: 12, padding: "6px 10px", outline: "none", width: "100%" };
-
-  return (
-    <div className="overlay">
-      <div className="modal">
-        <div className="mhdr">
-          <div className="mtitle">{tarea?.id ? "Editar tarea" : "Nueva tarea"}</div>
-          <button className="mclose" onClick={onClose}>✕</button>
-        </div>
-
-        {/* Tabs del modal */}
-        <div style={{ display: "flex", borderBottom: "1px solid var(--border)", background: "var(--surface2)" }}>
-          {[
-            { id: "datos", label: "Datos" },
-            { id: "subtareas", label: `Subtareas${subtareas.length ? ` (${subtareas.length})` : ""}` },
-            { id: "adjuntos", label: "📎 Adjuntos" },
-          ].map(t => (
-            <div key={t.id}
-              onClick={() => setTabModal(t.id)}
-              style={{ padding: "9px 16px", fontSize: 11, fontWeight: 600, cursor: "pointer", letterSpacing: .5, textTransform: "uppercase", color: tabModal === t.id ? "var(--blue)" : "var(--muted)", borderBottom: `2px solid ${tabModal === t.id ? "var(--blue)" : "transparent"}`, transition: "all .12s" }}
-            >{t.label}</div>
-          ))}
-        </div>
-
-        <div className="mbody">
-
-          {/* ── TAB DATOS ── */}
-          {tabModal === "datos" && <>
-            <div className="form-grid">
-              <FG label="Nombre *" full><input value={form.nombre} onChange={e => set("nombre", e.target.value)} placeholder="Ej: Limpieza de casco" /></FG>
-              <FG label="Owner (responsable final)">
-                <select value={form.owner || ""} onChange={e => set("owner", e.target.value)}>
-                  <option value="">Sin asignar</option>
-                  {perfiles.map(p => <option key={p.id} value={p.nombre}>{p.nombre}</option>)}
-                </select>
-              </FG>
-              <FG label="Responsable de ejecución">
-                <select value={form.responsable || ""} onChange={e => set("responsable", e.target.value)}>
-                  <option value="">Sin asignar</option>
-                  {perfiles.map(p => <option key={p.id} value={p.nombre}>{p.nombre}</option>)}
-                </select>
-              </FG>
-              <FG label="Status">
-                <select value={form.status} onChange={e => set("status", e.target.value)}>
-                  {Object.entries(STATUS_TAREA).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-                </select>
-              </FG>
-              <FG label="Fecha inicio *"><input type="date" value={form.fecha_inicio || ""} onChange={e => set("fecha_inicio", e.target.value)} /></FG>
-              <FG label="Duración (días hábiles)"><input type="number" min={1} value={form.duracion_dias} onChange={e => set("duracion_dias", parseInt(e.target.value) || 1)} /></FG>
-              <FG label="Fecha fin (calculada)"><input value={form.fecha_fin ? fmtDate(form.fecha_fin) : "—"} readOnly style={{ background: "var(--surface2)", color: "var(--muted)", cursor: "not-allowed" }} /></FG>
-              <FG label="% Avance"><input type="number" min={0} max={100} value={form.porcentaje_avance} onChange={e => set("porcentaje_avance", parseInt(e.target.value) || 0)} /></FG>
-            </div>
-            <div className="form-section">Días hábiles</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-              {DIAS_SEMANA.map((d, i) => (
-                <div key={d} onClick={() => toggleDia(i)} className={`dia-btn ${form.dias_habiles[i] ? "active" : "inactive"}`}>{d}</div>
-              ))}
-            </div>
-            <FG label="Notas" full><textarea value={form.notas || ""} onChange={e => set("notas", e.target.value)} placeholder="Observaciones..." /></FG>
-            {otrasTareas.length > 0 && <>
-              <div className="form-section">Dependencias</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                {otrasTareas.map(t => (
-                  <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, cursor: "pointer" }}>
-                    <input type="checkbox" checked={(form.dependencias || []).includes(t.id)} onChange={() => toggleDep(t.id)} style={{ accentColor: "var(--blue)" }} />
-                    <span>{t.nombre}</span>
-                    {t.fecha_fin && <span style={{ fontSize: 10, color: "var(--muted)" }}>hasta {fmtDate(t.fecha_fin)}</span>}
-                  </label>
-                ))}
-              </div>
-            </>}
-          </>}
-
-          {/* ── TAB SUBTAREAS ── */}
-          {tabModal === "subtareas" && <>
-            {!tarea?.id
-              ? <div className="info-box accent" style={{ fontSize: 12 }}>Guardá la tarea primero para poder agregar subtareas.</div>
-              : <>
-                  {/* Formulario nueva/editar subtarea */}
-                  <div className="card" style={{ margin: 0, marginBottom: 14, padding: 14, background: "var(--surface2)" }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "var(--blue)", letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 }}>
-                      {editSubtareaId ? "Editando subtarea" : "Nueva subtarea"}
-                    </div>
-                    <FG label="Descripción *">
-                      <input value={subForm.descripcion} onChange={e => setSub("descripcion", e.target.value)} placeholder="Ej: Cotizar materiales" style={inStyle} />
-                    </FG>
-                    <div className="form-grid" style={{ marginTop: 10 }}>
-                      <FG label="Fecha inicio">
-                        <input type="date" value={subForm.fecha_inicio} onChange={e => setSub("fecha_inicio", e.target.value)}
-                          min={form.fecha_inicio || undefined} max={form.fecha_fin || undefined} />
-                      </FG>
-                      <FG label="Fecha fin">
-                        <input type="date" value={subForm.fecha_fin} onChange={e => setSub("fecha_fin", e.target.value)}
-                          min={subForm.fecha_inicio || form.fecha_inicio || undefined} max={form.fecha_fin || undefined} />
-                      </FG>
-                      <FG label="% Avance">
-                        <input type="number" min={0} max={100} value={subForm.porcentaje_avance} onChange={e => setSub("porcentaje_avance", parseInt(e.target.value) || 0)} />
-                      </FG>
-                      <FG label="Responsable">
-                        <select value={subForm.responsable} onChange={e => setSub("responsable", e.target.value)}>
-                          <option value="">Sin asignar</option>
-                          {perfiles.map(p => <option key={p.id} value={p.nombre}>{p.nombre}</option>)}
-                        </select>
-                      </FG>
-                    </div>
-                    {form.fecha_inicio && form.fecha_fin && (
-                      <div style={{ fontSize: 10, color: "var(--muted2)", marginBottom: 8 }}>
-                        Rango de la tarea madre: {fmtDate(form.fecha_inicio)} → {fmtDate(form.fecha_fin)}
-                      </div>
-                    )}
-                    <div className="flex-gap" style={{ justifyContent: "flex-end", marginTop: 8 }}>
-                      {editSubtareaId && (
-                        <button className="btn btn-ghost btn-sm" onClick={() => { setEditSubtareaId(null); setSubForm(blankSubForm()); }}>Cancelar</button>
-                      )}
-                      <button className="btn btn-primary btn-sm" onClick={handleGuardarSubtarea} disabled={savingSubtarea || !subForm.descripcion.trim()}>
-                        {savingSubtarea ? "..." : editSubtareaId ? "Guardar cambios" : "+ Agregar"}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Lista subtareas */}
-                  {subtareas.length === 0
-                    ? <div className="empty-state" style={{ padding: "24px 0" }}>Sin subtareas</div>
-                    : subtareas.map(s => (
-                        <div key={s.id} style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r2)", padding: "12px 14px", marginBottom: 8 }}>
-                          <div className="flex-between">
-                            <div style={{ fontWeight: 600, fontSize: 13, color: "var(--navy)" }}>{s.descripcion}</div>
-                            <div className="flex-gap">
-                              <button
-                                className="btn btn-cotizar btn-sm"
-                                onClick={() => setCotizarOrigen({ tipo: "subtarea", nombre: s.descripcion, id: s.id, proyectoId, proyectoEmpresa: tarea?._empresa, proyectoNombre: tarea?._proyectoNombre })}
-                              >🛒</button>
-                              <button className="btn btn-ghost btn-sm" onClick={() => handleEditarSubtarea(s)}>✏</button>
-                              <button
-                                onClick={() => handleEliminarSubtarea(s.id)}
-                                style={{ background: "none", border: "none", color: "var(--muted2)", cursor: "pointer", fontSize: 14 }}
-                                onMouseEnter={e => e.currentTarget.style.color = "var(--danger)"}
-                                onMouseLeave={e => e.currentTarget.style.color = "var(--muted2)"}
-                              >✕</button>
-                            </div>
-                          </div>
-                          <div className="req-meta mt8">
-                            {s.responsable && <span>👤 {s.responsable}</span>}
-                            {s.fecha_inicio && <><span>·</span><span>{fmtDate(s.fecha_inicio)} → {fmtDate(s.fecha_fin)}</span></>}
-                            <span>·</span><span>{s.porcentaje_avance || 0}% avance</span>
-                          </div>
-                          <div className="mt8"><PctBar pct={s.porcentaje_avance || 0} /></div>
-                        </div>
-                      ))
-                  }
-                </>
-            }
-          </>}
-
-          {/* ── TAB ADJUNTOS ── */}
-          {tabModal === "adjuntos" && <>
-            {!tarea?.id
-              ? <div className="info-box accent" style={{ fontSize: 12 }}>Guardá la tarea primero para poder adjuntar archivos.</div>
-              : <AdjuntosPanel proyectoId={proyectoId} tareaId={tarea.id} notify={() => {}} />
-            }
-          </>}
-
-        </div>
-
-        <div className="mftr" style={{ justifyContent: "space-between" }}>
-          <div>
-            {tarea?.id && !confirmEliminar && (
-              <button className="btn btn-danger btn-sm" onClick={() => setConfirmEliminar(true)}>✕ Eliminar tarea</button>
-            )}
-            {tarea?.id && confirmEliminar && (
-              <div className="flex-gap">
-                <span style={{ fontSize: 11, color: "var(--danger)" }}>¿Confirmar?</span>
-                <button className="btn btn-danger btn-sm" onClick={() => onEliminar(tarea.id)}>Sí, eliminar</button>
-                <button className="btn btn-ghost btn-sm" onClick={() => setConfirmEliminar(false)}>No</button>
-              </div>
-            )}
-          </div>
-          <div className="flex-gap">
-            {/* Botón cotizar tarea */}
-            {tarea?.id && (
-              <button
-                className="btn btn-cotizar btn-sm"
-                onClick={() => setCotizarOrigen({ tipo: "tarea", nombre: tarea.nombre, id: tarea.id, proyectoId, proyectoEmpresa: tarea._empresa, proyectoNombre: tarea._proyectoNombre })}
-              >🛒 Cotizar</button>
-            )}
-            <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
-            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? "Guardando..." : "Guardar tarea"}</button>
-          </div>
-        </div>
-      </div>
-    </div>
-    {/* Modal de cotización */}
-    {cotizarOrigen && (
-      <CotizarDesdeProjectsModal
-        origen={cotizarOrigen}
-        proyectoEmpresa={cotizarOrigen.proyectoEmpresa || null}
-        proyectoNombre={cotizarOrigen.proyectoNombre || ""}
-        onClose={() => setCotizarOrigen(null)}
-        notify={notify || (() => {})}
-      />
-    )}
-  );
-}
-
-// ─── PAGE PROYECTOS ───────────────────────────────────────────────────────────
-function PageProyectos({ onSelectProyecto, notify }) {
-  const [proyectos, setProyectos]   = useState([]);
-  const [loading, setLoading]       = useState(true);
-  const [modal, setModal]           = useState(false);
-  const [filtroEmpresa, setFiltroEmpresa] = useState("");
-  const [filtroStatus, setFiltroStatus]   = useState("");
-  const [eliminandoId, setEliminandoId]   = useState(null);
-  const [confirmId, setConfirmId]         = useState(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try { setProyectos(await api.getProyectos()); }
-    finally { setLoading(false); }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
-
-  const filtrados = proyectos.filter(p => {
-    if (filtroEmpresa && p.empresa !== filtroEmpresa) return false;
-    if (filtroStatus  && p.status  !== filtroStatus)  return false;
-    return true;
+  // Por solicitante
+  const bySol = {};
+  reqs.forEach(r => {
+    if (!bySol[r.solicitado_por]) bySol[r.solicitado_por] = { total: 0, urgentes: 0, devueltas: 0 };
+    bySol[r.solicitado_por].total++;
+    if (r.urgencia === "Critica") bySol[r.solicitado_por].urgentes++;
+    if (r.veces_devuelto > 0) bySol[r.solicitado_por].devueltas++;
   });
 
-  const handleEliminar = async (e, id) => {
-    e.stopPropagation();
-    if (confirmId !== id) { setConfirmId(id); return; }
-    setEliminandoId(id);
-    try {
-      await api.eliminarProyecto(id);
-      notify("Proyecto eliminado", "warn");
-      setConfirmId(null);
-      load();
-    } catch (err) {
-      notify("Error al eliminar: " + err.message, "error");
-    } finally {
-      setEliminandoId(null);
-    }
-  };
+  // Por categoría rechazo
+  const byRechazo = {};
+  reqs.filter(r => r.categoria_rechazo).forEach(r => {
+    byRechazo[r.categoria_rechazo] = (byRechazo[r.categoria_rechazo] || 0) + 1;
+  });
+
+  // Por proveedor
+  const byProv = {};
+  reqs.filter(r => r.proveedor_elegido).forEach(r => {
+    if (!byProv[r.proveedor_elegido]) byProv[r.proveedor_elegido] = { count: 0, total: 0, cur: r.moneda_real || "ARS" };
+    byProv[r.proveedor_elegido].count++;
+    byProv[r.proveedor_elegido].total += r.costo_real || 0;
+  });
 
   return (
     <div>
       <div className="stats">
-        <div className="stat"><div className="stat-label">Total</div><div className="stat-value" style={{ color: "var(--blue)" }}>{proyectos.length}</div></div>
-        <div className="stat"><div className="stat-label">En curso</div><div className="stat-value" style={{ color: "var(--accent2)" }}>{proyectos.filter(p => p.status === "en_curso").length}</div></div>
-        <div className="stat"><div className="stat-label">Atrasados</div><div className="stat-value" style={{ color: "var(--danger)" }}>{proyectos.filter(p => p.status === "en_curso" && p.fecha_fin && p.fecha_fin < today()).length}</div></div>
-        <div className="stat"><div className="stat-label">Completados</div><div className="stat-value" style={{ color: "var(--muted)" }}>{proyectos.filter(p => p.status === "completado").length}</div></div>
-      </div>
-      <div className="filter-row">
-        <select className="filter-select" value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)}>
-          <option value="">Todas las empresas</option>
-          {EMPRESAS.map(e => <option key={e}>{e}</option>)}
-        </select>
-        <select className="filter-select" value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}>
-          <option value="">Todos los estados</option>
-          {Object.entries(STATUS_PROYECTO).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-        </select>
-        {(filtroEmpresa || filtroStatus) && <button className="btn btn-ghost btn-sm" onClick={() => { setFiltroEmpresa(""); setFiltroStatus(""); }}>✕ Limpiar</button>}
-        <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>{filtrados.length} proyectos</span>
-        <button className="btn btn-primary btn-sm" onClick={() => setModal(true)}>+ Nuevo proyecto</button>
+        <div className="stat"><div className="stat-label">Total requisiciones</div><div className="stat-value v-blue">{total}</div></div>
+        <div className="stat"><div className="stat-label">% Urgencias críticas</div><div className="stat-value v-red">{pctUrgencias}%</div><div className="stat-sub">{urgencias} de {total}</div></div>
+        <div className="stat"><div className="stat-label">Con ida y vuelta</div><div className="stat-value v-amber">{conIdaVuelta}</div><div className="stat-sub">Lean: calidad del pedido</div></div>
+        <div className="stat"><div className="stat-label">Avg días revisión</div><div className="stat-value v-green">{avgRevision ? avgRevision.toFixed(1) : "—"}</div><div className="stat-sub">Velocidad compras</div></div>
       </div>
 
-      {loading
-        ? <div className="loading"><span className="spin">◌</span> Cargando...</div>
-        : filtrados.length === 0
-          ? <div className="empty-state"><div style={{ fontSize: 28, marginBottom: 8 }}>📋</div>Sin proyectos</div>
-          : filtrados.map(p => {
-              const s      = STATUS_PROYECTO[p.status] || { label: p.status, color: "b-gray" };
-              const tareas = p.proyecto_tareas || [];
-              const pct    = tareas.length ? Math.round(tareas.reduce((a, t) => a + (t.porcentaje_avance || 0), 0) / tareas.length) : 0;
-              const atrasada = p.status === "en_curso" && p.fecha_fin && p.fecha_fin < today();
-              const esConfirm = confirmId === p.id;
-              return (
-                <div key={p.id} className={`req-row ${atrasada ? "active-border" : ""}`}
-                  onClick={() => { if (confirmId === p.id) { setConfirmId(null); return; } onSelectProyecto(p); }}
-                  style={{ position: "relative" }}>
-                  <div className="flex-between mb8">
-                    <div className="flex-gap">
-                      <span className={`badge ${s.color}`}>{s.label}</span>
-                      <span className={`badge ${p.tipo === "externo" ? "b-purple" : "b-teal"}`}>{p.tipo}</span>
-                      {atrasada && <span className="badge b-red">⚠ Atrasado</span>}
-                    </div>
-                    <div className="flex-gap">
-                      <span style={{ fontSize: 10, color: "var(--muted)" }}>{p.empresa}</span>
-                      {/* Botón eliminar */}
-                      {!esConfirm ? (
-                        <button
-                          onClick={e => handleEliminar(e, p.id)}
-                          disabled={eliminandoId === p.id}
-                          title="Eliminar proyecto"
-                          style={{ background: "none", border: "1px solid var(--border)", borderRadius: "var(--r)", color: "var(--muted2)", cursor: "pointer", fontSize: 10, padding: "2px 8px", fontFamily: "var(--sans)", fontWeight: 600, transition: "all .12s" }}
-                          onMouseEnter={e => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "var(--danger)"; }}
-                          onMouseLeave={e => { e.currentTarget.style.color = "var(--muted2)"; e.currentTarget.style.borderColor = "var(--border)"; }}
-                        >
-                          {eliminandoId === p.id ? "..." : "✕"}
-                        </button>
-                      ) : (
-                        <div className="flex-gap" onClick={e => e.stopPropagation()}>
-                          <span style={{ fontSize: 10, color: "var(--danger)", fontWeight: 600 }}>¿Eliminar?</span>
-                          <button className="btn btn-danger btn-sm" onClick={e => handleEliminar(e, p.id)} disabled={eliminandoId === p.id}>
-                            {eliminandoId === p.id ? "..." : "Sí"}
-                          </button>
-                          <button className="btn btn-ghost btn-sm" onClick={e => { e.stopPropagation(); setConfirmId(null); }}>No</button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <div className="req-title">{p.nombre}</div>
-                  <div className="req-meta">
-                    {p.cliente    && <span>👤 {p.cliente}</span>}
-                    {p.responsable && <><span>·</span><span>👤 {p.responsable}</span></>}
-                    {p.fecha_inicio && <><span>·</span><span>{fmtDate(p.fecha_inicio)} → {fmtDate(p.fecha_fin)}</span></>}
-                    <span>·</span><span>{tareas.length} tareas</span>
-                    {(p.proyecto_recursos || []).length > 0 && <><span>·</span><span>{(p.proyecto_recursos || []).map(r => r.nombre).join(", ")}</span></>}
-                    {(p.proyecto_contactos || []).length > 0 && <><span>·</span><span>📧 {(p.proyecto_contactos || []).map(c => c.nombre).join(", ")}</span></>}
-                  </div>
-                  {tareas.length > 0 && <div className="mt8"><PctBar pct={pct} /><div style={{ fontSize: 9, color: "var(--muted)", fontFamily: "var(--mono)", marginTop: 3 }}>{pct}% avance global</div></div>}
-                </div>
-              );
-            })
-      }
-      {modal && <ProyectoModal onClose={() => setModal(false)} onSave={() => { setModal(false); notify("Proyecto creado", "success"); load(); }} />}
-    </div>
-  );
-}
-
-
-// ─── ÍCONO POR TIPO DE ARCHIVO ────────────────────────────────────────────────
-function FileIcon({ tipo, nombre }) {
-  const ext = (nombre || "").split(".").pop().toLowerCase();
-  if (["pdf"].includes(ext)) return <span style={{ color: "#C0392B", fontSize: 16 }}>📄</span>;
-  if (["xls","xlsx","csv"].includes(ext)) return <span style={{ color: "#1E7A4A", fontSize: 16 }}>📊</span>;
-  if (["doc","docx"].includes(ext)) return <span style={{ color: "#235C96", fontSize: 16 }}>📝</span>;
-  if (["jpg","jpeg","png","gif","webp"].includes(ext)) return <span style={{ color: "#B07D0A", fontSize: 16 }}>🖼</span>;
-  if (["eml","msg"].includes(ext)) return <span style={{ color: "#6381A7", fontSize: 16 }}>✉️</span>;
-  return <span style={{ fontSize: 16 }}>📎</span>;
-}
-
-function fmtTamanio(bytes) {
-  if (!bytes) return "";
-  if (bytes < 1024) return bytes + " B";
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-  return (bytes / (1024 * 1024)).toFixed(1) + " MB";
-}
-
-// ─── PANEL DE ADJUNTOS ────────────────────────────────────────────────────────
-function AdjuntosPanel({ proyectoId, tareaId = null, notify }) {
-  const [adjuntos, setAdjuntos] = useState([]);
-  const [loading, setLoading]   = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [eliminandoId, setEliminandoId] = useState(null);
-  const inputId = `adj-input-${proyectoId}-${tareaId || "proy"}`;
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await api.getAdjuntos(proyectoId);
-      // Si es panel de tarea, filtrar por tareaId; si es panel de proyecto, mostrar los sin tarea
-      setAdjuntos(tareaId
-        ? data.filter(a => a.tarea_id === tareaId)
-        : data.filter(a => !a.tarea_id)
-      );
-    } finally { setLoading(false); }
-  }, [proyectoId, tareaId]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const handleUpload = async (files) => {
-    if (!files?.length) return;
-    setUploading(true);
-    try {
-      for (const file of Array.from(files)) {
-        await api.subirAdjunto(file, proyectoId, tareaId);
-      }
-      notify(`${files.length > 1 ? files.length + " archivos subidos" : "Archivo subido"}`, "success");
-      load();
-    } catch (e) {
-      notify("Error al subir: " + e.message, "error");
-    } finally { setUploading(false); }
-  };
-
-  const handleEliminar = async (adj) => {
-    if (!window.confirm(`¿Eliminar "${adj.nombre}"?`)) return;
-    setEliminandoId(adj.id);
-    try {
-      await api.eliminarAdjunto(adj.id, adj.url);
-      notify("Adjunto eliminado", "warn");
-      load();
-    } catch (e) {
-      notify("Error: " + e.message, "error");
-    } finally { setEliminandoId(null); }
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    handleUpload(e.dataTransfer.files);
-  };
-
-  return (
-    <div>
-      {/* Zona de drop */}
-      <div
-        onDrop={handleDrop}
-        onDragOver={e => e.preventDefault()}
-        onClick={() => document.getElementById(inputId).click()}
-        style={{
-          border: "2px dashed var(--border)", borderRadius: "var(--r2)",
-          padding: "20px", textAlign: "center", cursor: "pointer",
-          background: "var(--surface2)", transition: "all .15s", marginBottom: 12,
-        }}
-        onMouseEnter={e => e.currentTarget.style.borderColor = "var(--blue)"}
-        onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border)"}
-      >
-        <input
-          id={inputId}
-          type="file"
-          multiple
-          style={{ display: "none" }}
-          onChange={e => handleUpload(e.target.files)}
-          accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.jpg,.jpeg,.png,.eml,.msg,.txt"
-        />
-        {uploading
-          ? <div style={{ fontSize: 12, color: "var(--muted)" }}><span className="spin" style={{ display: "inline-block" }}>◌</span> Subiendo...</div>
-          : <div>
-              <div style={{ fontSize: 22, marginBottom: 4 }}>📎</div>
-              <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>Arrastrá archivos o hacé click para subir</div>
-              <div style={{ fontSize: 10, color: "var(--muted2)", marginTop: 2 }}>PDF, Word, Excel, imágenes, correos (.eml)</div>
-            </div>
-        }
-      </div>
-
-      {/* Lista de adjuntos */}
-      {loading
-        ? <div style={{ fontSize: 12, color: "var(--muted)", padding: "8px 0" }}>Cargando...</div>
-        : adjuntos.length === 0
-          ? <div style={{ fontSize: 12, color: "var(--muted2)", padding: "4px 0" }}>Sin adjuntos</div>
-          : adjuntos.map(adj => (
-              <div key={adj.id} style={{
-                display: "flex", alignItems: "center", gap: 10,
-                padding: "8px 12px", background: "var(--surface)",
-                border: "1px solid var(--border)", borderRadius: "var(--r)",
-                marginBottom: 6, transition: "all .12s",
-              }}>
-                <FileIcon tipo={adj.tipo} nombre={adj.nombre} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <a
-                    href={adj.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ fontSize: 12, fontWeight: 600, color: "var(--blue)", textDecoration: "none", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                  >
-                    {adj.nombre}
-                  </a>
-                  <div style={{ fontSize: 10, color: "var(--muted2)" }}>
-                    {fmtTamanio(adj.tamanio)}{adj.created_at ? " · " + fmtDate(adj.created_at.slice(0,10)) : ""}
-                  </div>
-                </div>
-                <button
-                  onClick={() => handleEliminar(adj)}
-                  disabled={eliminandoId === adj.id}
-                  style={{ background: "none", border: "none", color: "var(--muted2)", cursor: "pointer", fontSize: 14, padding: "2px 6px", borderRadius: 4, flexShrink: 0 }}
-                  onMouseEnter={e => e.currentTarget.style.color = "var(--danger)"}
-                  onMouseLeave={e => e.currentTarget.style.color = "var(--muted2)"}
-                >
-                  {eliminandoId === adj.id ? "..." : "✕"}
-                </button>
-              </div>
-            ))
-      }
-    </div>
-  );
-}
-
-// ─── TAB ADJUNTOS DE TAREAS ──────────────────────────────────────────────────
-function AdjuntosTareasTab({ proyectoId, tareas, notify }) {
-  const [adjuntos, setAdjuntos] = useState([]);
-  const [subtareasMap, setSubtareasMap] = useState({}); // tareaId -> subtareas
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const cargar = async () => {
-      setLoading(true);
-      try {
-        // Cargar todos los adjuntos del proyecto
-        const data = await api.getAdjuntos(proyectoId);
-        setAdjuntos(data);
-        // Cargar subtareas de todas las tareas
-        const subs = {};
-        await Promise.all(tareas.map(async t => {
-          const s = await api.getSubtareas(t.id);
-          subs[t.id] = s;
-        }));
-        setSubtareasMap(subs);
-      } finally { setLoading(false); }
-    };
-    cargar();
-  }, [proyectoId, tareas]);
-
-  if (loading) return <div className="loading"><span className="spin">◌</span></div>;
-
-  const adjPorTarea   = (tareaId) => adjuntos.filter(a => a.tarea_id === tareaId);
-  const adjPorSub     = (subId)   => adjuntos.filter(a => a.tarea_id === subId);
-  const tareasConAdj  = tareas.filter(t => adjPorTarea(t.id).length > 0 || (subtareasMap[t.id] || []).some(s => adjPorSub(s.id).length > 0));
-
-  if (tareasConAdj.length === 0) return (
-    <div className="empty-state">
-      <div style={{ fontSize: 28, marginBottom: 8 }}>📋</div>
-      <div>Sin adjuntos en tareas ni subtareas</div>
-      <div style={{ fontSize: 11, color: "var(--muted2)", marginTop: 4 }}>Los adjuntos se agregan desde el modal de cada tarea → tab Adjuntos</div>
-    </div>
-  );
-
-  return (
-    <div>
-      {tareasConAdj.map(t => {
-        const adjsTarea = adjPorTarea(t.id);
-        const subs = (subtareasMap[t.id] || []).filter(s => adjPorSub(s.id).length > 0);
-        return (
-          <div key={t.id} className="card" style={{ marginBottom: 12 }}>
-            {/* ── Header tarea ── */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: adjsTarea.length > 0 || subs.length > 0 ? 12 : 0 }}>
-              <span style={{ fontSize: 13 }}>📋</span>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "var(--navy)" }}>{t.nombre}</div>
-                <div style={{ fontSize: 10, color: "var(--muted)" }}>
-                  {t.owner && `🎯 ${t.owner}`}{t.responsable && ` · 👤 ${t.responsable}`}
-                  {t.fecha_inicio && ` · ${fmtDate(t.fecha_inicio)} → ${fmtDate(t.fecha_fin)}`}
-                </div>
-              </div>
-            </div>
-
-            {/* ── Adjuntos de la tarea ── */}
-            {adjsTarea.length > 0 && (
-              <div style={{ marginBottom: subs.length > 0 ? 12 : 0 }}>
-                {adjsTarea.map(adj => (
-                  <AdjuntoFila key={adj.id} adj={adj} proyectoId={proyectoId} notify={notify} onEliminar={() => setAdjuntos(prev => prev.filter(a => a.id !== adj.id))} />
-                ))}
-              </div>
-            )}
-
-            {/* ── Subtareas con adjuntos ── */}
-            {subs.map(s => (
-              <div key={s.id} style={{ marginLeft: 20, borderLeft: "2px solid var(--border)", paddingLeft: 12, marginBottom: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                  <span style={{ fontSize: 11, color: "var(--muted)" }}>↳</span>
-                  <div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: "var(--mid)" }}>{s.descripcion}</div>
-                    {s.responsable && <div style={{ fontSize: 10, color: "var(--muted2)" }}>👤 {s.responsable}</div>}
-                  </div>
-                </div>
-                {adjPorSub(s.id).map(adj => (
-                  <AdjuntoFila key={adj.id} adj={adj} proyectoId={proyectoId} notify={notify} onEliminar={() => setAdjuntos(prev => prev.filter(a => a.id !== adj.id))} />
-                ))}
-              </div>
-            ))}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// Fila de adjunto reutilizable con eliminar
-function AdjuntoFila({ adj, proyectoId, notify, onEliminar }) {
-  const [eliminando, setEliminando] = useState(false);
-  const handleEliminar = async () => {
-    if (!window.confirm(`¿Eliminar "${adj.nombre}"?`)) return;
-    setEliminando(true);
-    try {
-      await api.eliminarAdjunto(adj.id, adj.url);
-      notify("Adjunto eliminado", "warn");
-      onEliminar();
-    } catch (e) { notify("Error: " + e.message, "error"); }
-    finally { setEliminando(false); }
-  };
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: "var(--r)", marginBottom: 5 }}>
-      <FileIcon tipo={adj.tipo} nombre={adj.nombre} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <a href={adj.url} target="_blank" rel="noreferrer"
-          style={{ fontSize: 12, fontWeight: 600, color: "var(--blue)", textDecoration: "none", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {adj.nombre}
-        </a>
-        <div style={{ fontSize: 10, color: "var(--muted2)" }}>{fmtTamanio(adj.tamanio)}{adj.created_at ? " · " + fmtDate(adj.created_at.slice(0,10)) : ""}</div>
-      </div>
-      <button onClick={handleEliminar} disabled={eliminando}
-        style={{ background: "none", border: "none", color: "var(--muted2)", cursor: "pointer", fontSize: 14, padding: "2px 6px", borderRadius: 4 }}
-        onMouseEnter={e => e.currentTarget.style.color = "var(--danger)"}
-        onMouseLeave={e => e.currentTarget.style.color = "var(--muted2)"}
-      >{eliminando ? "..." : "✕"}</button>
-    </div>
-  );
-}
-
-// ─── FULLSCREEN WRAPPER ───────────────────────────────────────────────────────
-function FullscreenWrapper({ title, onClose, children }) {
-  // Bloquear scroll del body
-  useEffect(() => {
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = ""; };
-  }, []);
-
-  return (
-    <div className="fullscreen-overlay">
-      <div className="fs-topbar">
-        <div className="fs-title">🔲 {title}</div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,.5)" }}>Modo presentación</div>
-          <button className="fs-btn" onClick={onClose}>✕ Cerrar</button>
-        </div>
-      </div>
-      <div className="fs-content">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-// ─── PAGE DETALLE ─────────────────────────────────────────────────────────────
-function PageDetalle({ proyectoId, onBack, notify }) {
-  const [proyecto, setProyecto]       = useState(null);
-  const [loading, setLoading]         = useState(true);
-  const [tab, setTab]                 = useState("gantt");
-  const [modalTarea, setModalTarea]   = useState(null);
-  const [editProyecto, setEditProyecto] = useState(false);
-  const [fullscreen, setFullscreen]   = useState(null); // "gantt" | "detalle" | null
-  const [tareasOrden, setTareasOrden]       = useState(null); // orden visual drag & drop
-  const [tareasExpandidas, setTareasExpandidas] = useState({}); // id -> bool
-  const dragIdx = useRef(null);
-
-  const toggleExpandir = (id, e) => {
-    e.stopPropagation();
-    setTareasExpandidas(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await api.getProyectos();
-      setProyecto(data.find(p => p.id === proyectoId));
-    } finally { setLoading(false); }
-  }, [proyectoId]);
-
-  useEffect(() => { load(); }, [load]);
-
-  if (loading) return <div className="loading"><span className="spin">◌</span> Cargando...</div>;
-  if (!proyecto) return <div className="empty-state">Proyecto no encontrado</div>;
-
-  const tareas   = proyecto.proyecto_tareas || [];
-  const criticas = calcularCaminoCritico(tareas);
-  const pct      = tareas.length ? Math.round(tareas.reduce((a, t) => a + (t.porcentaje_avance || 0), 0) / tareas.length) : 0;
-  const atrasadas = tareas.filter(t => t.fecha_fin && t.fecha_fin < today() && t.porcentaje_avance < 100);
-  const tareasOrdenadas = tareasOrden || tareas;
-
-  const handleDragStart = (i) => { dragIdx.current = i; };
-  const handleDragOver  = (e, i) => {
-    e.preventDefault();
-    if (dragIdx.current === null || dragIdx.current === i) return;
-    const arr = [...tareasOrdenadas];
-    const [moved] = arr.splice(dragIdx.current, 1);
-    arr.splice(i, 0, moved);
-    dragIdx.current = i;
-    setTareasOrden(arr);
-  };
-  const handleDragEnd = () => { dragIdx.current = null; };
-
-  const fechas   = tareas.filter(t => t.fecha_inicio && t.fecha_fin);
-  const minFecha = fechas.length ? fechas.reduce((a, t) => t.fecha_inicio < a ? t.fecha_inicio : a, fechas[0].fecha_inicio) : proyecto.fecha_inicio;
-  const maxFecha = fechas.length ? fechas.reduce((a, t) => t.fecha_fin   > a ? t.fecha_fin   : a, fechas[0].fecha_fin)   : proyecto.fecha_fin;
-  const totalDias = minFecha && maxFecha ? Math.max(diffDays(minFecha, maxFecha), 1) : 90;
-
-  const getBarStyle = (t) => {
-    if (!t.fecha_inicio || !t.fecha_fin || !minFecha) return null;
-    const left  = (diffDays(minFecha, t.fecha_inicio) / totalDias) * 100;
-    const width = Math.max((diffDays(t.fecha_inicio, t.fecha_fin) / totalDias) * 100, 2);
-    return { left: `${left}%`, width: `${width}%` };
-  };
-
-  const getBarClass = (t) => {
-    if (t.porcentaje_avance >= 100) return "done";
-    if (criticas.has(t.id))         return "critical";
-    if (t.fecha_fin && t.fecha_fin < today()) return "late";
-    return "normal";
-  };
-
-  const meses = [];
-  if (minFecha && maxFecha) {
-    let cur = new Date(minFecha);
-    const end = new Date(maxFecha);
-    while (cur <= end) {
-      meses.push(cur.toLocaleString("es-AR", { month: "short", year: "2-digit" }));
-      cur = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
-    }
-  }
-
-  const cols = `220px ${meses.length > 0 ? `repeat(${meses.length}, 1fr)` : "1fr"}`;
-
-  const handleEliminarTarea = async (id) => {
-    try {
-      await api.eliminarTarea(id);
-      setModalTarea(null);
-      notify("Tarea eliminada", "warn");
-      load();
-    } catch (e) { notify("Error: " + e.message, "error"); }
-  };
-
-  return (
-    <div>
-      <div className="flex-gap mb12">
-        <button className="btn btn-ghost btn-sm" onClick={onBack}>← Volver</button>
-        <button className="btn btn-ghost btn-sm" onClick={() => setEditProyecto(true)}>✏ Editar</button>
-        <button className="btn btn-primary btn-sm" onClick={() => setModalTarea({})}>+ Nueva tarea</button>
-        <button className="btn btn-ghost btn-sm" onClick={() => setFullscreen("detalle")} style={{ marginLeft: "auto" }} title="Modo presentación">🔲 Presentación</button>
-      </div>
-
-      <div className="card mb12">
-        <div className="flex-between">
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: "var(--navy)", marginBottom: 6 }}>{proyecto.nombre}</div>
-            <div className="flex-gap">
-              <span className={`badge ${STATUS_PROYECTO[proyecto.status]?.color || "b-gray"}`}>{STATUS_PROYECTO[proyecto.status]?.label}</span>
-              <span className={`badge ${proyecto.tipo === "externo" ? "b-purple" : "b-teal"}`}>{proyecto.tipo}</span>
-              <span style={{ fontSize: 11, color: "var(--muted)" }}>{proyecto.empresa}</span>
-              {proyecto.cliente    && <span style={{ fontSize: 11, color: "var(--muted)" }}>· {proyecto.cliente}</span>}
-              {proyecto.responsable && <span style={{ fontSize: 11, color: "var(--muted)" }}>· {proyecto.responsable}</span>}
-            </div>
-          </div>
-          <div style={{ textAlign: "right", flexShrink: 0 }}>
-            <div style={{ fontFamily: "var(--mono)", fontSize: 24, fontWeight: 600, color: "var(--blue)" }}>{pct}%</div>
-            <div style={{ fontSize: 10, color: "var(--muted)" }}>avance global</div>
-          </div>
-        </div>
-        {(proyecto.proyecto_recursos || []).length > 0 && (
-          <div className="flex-gap mt8">{(proyecto.proyecto_recursos || []).map((r, i) => <div key={i} className="recurso-tag">{r.nombre}</div>)}</div>
-        )}
-        {proyecto.descripcion && <div className="info-box mt8" style={{ fontSize: 12 }}>{proyecto.descripcion}</div>}
-        {(proyecto.proyecto_contactos || []).length > 0 && (
-          <div className="mt8" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {(proyecto.proyecto_contactos || []).map((c, i) => (
-              <div key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 10px", fontSize: 11 }}>
-                <span style={{ fontWeight: 600, color: "var(--navy)" }}>{c.nombre}</span>
-                {c.email && <a href={`mailto:${c.email}`} onClick={e => e.stopPropagation()} style={{ color: "var(--blue)", fontSize: 10 }}>{c.email}</a>}
-              </div>
-            ))}
-          </div>
-        )}
-        <div className="mt8"><PctBar pct={pct} /></div>
-      </div>
-
-      {(() => {
-        // Calcular subtareas y stats por responsable
-        const todasSubtareas = tareas.flatMap(t => t.subtareas || []);
-        const subPendientes  = todasSubtareas.filter(s => (s.porcentaje_avance || 0) === 0).length;
-        const subEnCurso     = todasSubtareas.filter(s => (s.porcentaje_avance || 0) > 0 && (s.porcentaje_avance || 0) < 100).length;
-        const subCompletadas = todasSubtareas.filter(s => (s.porcentaje_avance || 0) >= 100).length;
-
-        // Agrupar tareas por responsable
-        const porResponsable = {};
-        tareas.forEach(t => {
-          const r = t.responsable || "Sin asignar";
-          if (!porResponsable[r]) porResponsable[r] = { pendientes: 0, en_curso: 0, completadas: 0, atrasadas: 0 };
-          const esAtrasada = t.fecha_fin && t.fecha_fin < today() && (t.porcentaje_avance || 0) < 100;
-          if ((t.porcentaje_avance || 0) >= 100)     porResponsable[r].completadas++;
-          else if (esAtrasada)                        porResponsable[r].atrasadas++;
-          else if ((t.porcentaje_avance || 0) > 0)   porResponsable[r].en_curso++;
-          else                                        porResponsable[r].pendientes++;
-        });
-
-        return (
-          <>
-            {/* Fila 1: stats principales */}
-            <div className="stats">
-              <div className="stat"><div className="stat-label">Tareas</div><div className="stat-value" style={{ color: "var(--blue)" }}>{tareas.length}</div></div>
-              <div className="stat"><div className="stat-label">Completadas</div><div className="stat-value" style={{ color: "var(--accent2)" }}>{tareas.filter(t => t.porcentaje_avance >= 100).length}</div></div>
-              <div className="stat"><div className="stat-label">Atrasadas</div><div className="stat-value" style={{ color: "var(--danger)" }}>{atrasadas.length}</div></div>
-              <div className="stat"><div className="stat-label">Camino crítico</div><div className="stat-value" style={{ color: "var(--warn)" }}>{criticas.size}</div></div>
-            </div>
-
-            {/* Fila 2: subtareas full width */}
-            <div className="stats" style={{ marginBottom: 12 }}>
-              <div className="stat">
-                <div className="stat-label">Subtareas total</div>
-                <div className="stat-value" style={{ color: "var(--navy)" }}>{todasSubtareas.length}</div>
-              </div>
-              <div className="stat">
-                <div className="stat-label">Pendientes</div>
-                <div className="stat-value" style={{ color: "var(--muted)" }}>{subPendientes}</div>
-              </div>
-              <div className="stat">
-                <div className="stat-label">En curso</div>
-                <div className="stat-value" style={{ color: "var(--blue)" }}>{subEnCurso}</div>
-              </div>
-              <div className="stat">
-                <div className="stat-label">Completadas</div>
-                <div className="stat-value" style={{ color: "var(--accent2)" }}>{subCompletadas}</div>
-              </div>
-            </div>
-
-            {/* Fila 3: tabla responsables full width */}
-            <div style={{ marginBottom: 18 }}>
-              <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-                <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", background: "var(--surface2)" }}>
-                  <div className="stat-label">Tareas y subtareas por responsable de ejecución</div>
-                </div>
-                {Object.keys(porResponsable).length === 0
-                  ? <div style={{ fontSize: 11, color: "var(--muted2)", padding: 14 }}>Sin responsables asignados</div>
-                  : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-                      <thead>
-                        <tr style={{ background: "var(--surface2)" }}>
-                          <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 600, color: "var(--muted)", fontSize: 9, letterSpacing: .5, textTransform: "uppercase", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }}>Responsable</th>
-                          <th style={{ padding: "6px 8px", textAlign: "center", fontWeight: 600, color: "var(--muted)", fontSize: 9, letterSpacing: .5, textTransform: "uppercase", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap" }} colSpan={4}>— Tareas —</th>
-                          <th style={{ padding: "6px 8px", textAlign: "center", fontWeight: 600, color: "var(--muted)", fontSize: 9, letterSpacing: .5, textTransform: "uppercase", borderBottom: "1px solid var(--border)", whiteSpace: "nowrap", borderLeft: "2px solid var(--border)" }} colSpan={4}>— Subtareas —</th>
-                        </tr>
-                        <tr style={{ background: "var(--surface2)" }}>
-                          <th style={{ padding: "4px 12px", borderBottom: "2px solid var(--border)" }}></th>
-                          {["Total","En curso","Complet.","Atras.","Total","En curso","Complet.","Atras."].map((h, i) => (
-                            <th key={i} style={{ padding: "4px 8px", textAlign: "center", fontWeight: 600, color: "var(--muted2)", fontSize: 9, letterSpacing: .3, textTransform: "uppercase", borderBottom: "2px solid var(--border)", whiteSpace: "nowrap", borderLeft: i === 4 ? "2px solid var(--border)" : "none" }}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {Object.entries(porResponsable).map(([resp, s], idx) => {
-                          // Calcular subtareas para este responsable
-                          const misSubs = tareas
-                            .filter(t => (t.responsable || "Sin asignar") === resp)
-                            .flatMap(t => t.subtareas || []);
-                          const sSubs = {
-                            total:      misSubs.length,
-                            en_curso:   misSubs.filter(s => (s.porcentaje_avance||0) > 0 && (s.porcentaje_avance||0) < 100).length,
-                            completadas:misSubs.filter(s => (s.porcentaje_avance||0) >= 100).length,
-                            atrasadas:  misSubs.filter(s => s.fecha_fin && s.fecha_fin < today() && (s.porcentaje_avance||0) < 100).length,
-                          };
-                          const tareaTotal = s.pendientes + s.en_curso + s.completadas + s.atrasadas;
-                          const rowBg = idx % 2 === 0 ? "#fff" : "var(--surface2)";
-                          const cell = (val, color) => (
-                            <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: val > 0 ? 700 : 400, color: val > 0 ? color : "var(--muted2)", background: rowBg }}>
-                              {val > 0 ? val : "—"}
-                            </td>
-                          );
-                          return (
-                            <tr key={resp}>
-                              <td style={{ padding: "7px 12px", fontWeight: 600, color: "var(--navy)", fontSize: 11, background: rowBg, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={resp}>
-                                👤 {resp}
-                              </td>
-                              {cell(tareaTotal, "var(--navy)")}
-                              {cell(s.en_curso, "var(--blue)")}
-                              {cell(s.completadas, "var(--accent2)")}
-                              <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: s.atrasadas > 0 ? 700 : 400, color: s.atrasadas > 0 ? "var(--danger)" : "var(--muted2)", background: rowBg }}>
-                                {s.atrasadas > 0 ? `⚠ ${s.atrasadas}` : "—"}
-                              </td>
-                              <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: sSubs.total > 0 ? 700 : 400, color: "var(--navy)", background: rowBg, borderLeft: "2px solid var(--border)" }}>
-                                {sSubs.total > 0 ? sSubs.total : "—"}
-                              </td>
-                              {cell(sSubs.en_curso, "var(--blue)")}
-                              {cell(sSubs.completadas, "var(--accent2)")}
-                              <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: sSubs.atrasadas > 0 ? 700 : 400, color: sSubs.atrasadas > 0 ? "var(--danger)" : "var(--muted2)", background: rowBg }}>
-                                {sSubs.atrasadas > 0 ? `⚠ ${sSubs.atrasadas}` : "—"}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                }
-              </div>
-            </div>
-          </>
-        );
-      })()}
-
-      <div className="tabs-row" style={{ alignItems: "center" }}>
-        {[{ id: "gantt", label: "Gantt" }, { id: "lista", label: "Lista de tareas" }, { id: "critico", label: "Camino crítico" }, { id: "adjuntos", label: "📎 Adjuntos" }, { id: "adjuntos_tareas", label: "📋 Adjuntos de tareas" }].map(t => (
-          <div key={t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</div>
-        ))}
-        {tab === "gantt" && (
-          <button
-            className="btn btn-ghost btn-sm"
-            onClick={() => setFullscreen("gantt")}
-            style={{ marginLeft: "auto", marginBottom: 2 }}
-            title="Ver Gantt en pantalla completa"
-          >🔲 Ampliar Gantt</button>
-        )}
-      </div>
-
-      {tab === "gantt" && (
-        <div className="gantt-wrap" style={{ overflowX: "auto" }}>
-          <div className="gantt-header" style={{ gridTemplateColumns: cols }}>
-            <div className="gh-cell" style={{ textAlign: "center", borderRight: "1px solid var(--border)" }}>Tarea</div>
-            {meses.map((m, i) => <div key={i} className="gh-cell">{m}</div>)}
-            {meses.length === 0 && <div className="gh-cell">Línea de tiempo</div>}
-          </div>
-          {tareasOrdenadas.length === 0
-            ? <div className="empty-state">Sin tareas — usá "+ Nueva tarea" para empezar</div>
-            : tareasOrdenadas.map((t, i) => {
-                const barStyle = getBarStyle(t);
-                const subtareas = t.subtareas || [];
-                return (
-                  <React.Fragment key={t.id}>
-                    {/* ── Fila tarea madre ── */}
-                    <div
-                      className="gantt-row"
-                      style={{ gridTemplateColumns: cols, cursor: "grab", background: "#DBEAFE" }}
-                      draggable
-                      onDragStart={() => handleDragStart(i)}
-                      onDragOver={e => handleDragOver(e, i)}
-                      onDragEnd={handleDragEnd}
-                      onClick={() => setModalTarea({ ...t, _empresa: proyecto.empresa, _proyectoNombre: proyecto.nombre })}
-                    >
-                      <div className="gc-label">
-                        {/* Fila superior: drag + expand en la misma línea */}
-                        <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4 }}>
-                          <span style={{ color: "var(--muted)", fontSize: 12, flexShrink: 0 }} title="Arrastrá para reordenar">⠿</span>
-                          {subtareas.length > 0 && (
-                            <span
-                              onClick={e => toggleExpandir(t.id, e)}
-                              title={tareasExpandidas[t.id] ? "Contraer subtareas" : "Expandir subtareas"}
-                              style={{ color: "var(--blue)", fontSize: 10, cursor: "pointer", flexShrink: 0, userSelect: "none" }}
-                            >
-                              {tareasExpandidas[t.id] ? "▼" : "▶"}
-                            </span>
-                          )}
-                          {subtareas.length > 0 && <span style={{ fontSize: 9, color: "var(--muted)", fontFamily: "var(--mono)" }}>{subtareas.length} sub</span>}
-                          {criticas.has(t.id) && <span className="cc-badge">CC</span>}
-                        </div>
-                        {/* Nombre con wrap */}
-                        <div style={{ fontSize: 11, fontWeight: 700, color: "var(--navy)", lineHeight: 1.3, wordBreak: "break-word" }}>
-                          {t.nombre}
-                        </div>
-                        <div style={{ fontSize: 9, color: "var(--muted)", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
-                      </div>
-                      <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}`, background: "#fff" }}>
-                        {barStyle
-                          ? <div className={`bar ${getBarClass(t)}`} style={barStyle}>{t.nombre}</div>
-                          : <div style={{ fontSize: 10, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>
-                        }
-                      </div>
-                    </div>
-                    {/* ── Filas subtareas (solo si expandida) ── */}
-                    {tareasExpandidas[t.id] && subtareas.map(s => {
-                      const sLeft  = s.fecha_inicio && minFecha ? (diffDays(minFecha, s.fecha_inicio) / totalDias) * 100 : null;
-                      const sWidth = s.fecha_inicio && s.fecha_fin ? Math.max((diffDays(s.fecha_inicio, s.fecha_fin) / totalDias) * 100, 1) : null;
-                      const sStyle = sLeft !== null && sWidth !== null ? { left: `${sLeft}%`, width: `${sWidth}%` } : null;
-                      return (
-                        <div
-                          key={s.id}
-                          className="gantt-row"
-                          style={{ gridTemplateColumns: cols, background: "#F0F4F8", cursor: "pointer" }}
-                          onClick={e => { e.stopPropagation(); setModalTarea({ ...t, _openSubtarea: s, _empresa: proyecto.empresa, _proyectoNombre: proyecto.nombre }); }}
-                        >
-                          <div className="gc-label">
-                            <div style={{ fontSize: 10, fontWeight: 600, color: "var(--mid)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>↳ {s.descripcion}</div>
-                            <div style={{ fontSize: 9, color: "var(--muted2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.responsable || "—"} · {s.porcentaje_avance || 0}%</div>
-                          </div>
-                          <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}` }}>
-                            {sStyle
-                              ? <div style={{ ...sStyle, position: "absolute", height: 10, borderRadius: 3, background: s.porcentaje_avance >= 100 ? "var(--accent2)" : "var(--mid)", opacity: 0.8 }} />
-                              : <div style={{ fontSize: 9, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>
-                            }
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </React.Fragment>
-                );
-              })
-          }
-          <div style={{ padding: "10px 16px", display: "flex", gap: 14, borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap", alignItems: "center" }}>
-            {[["var(--danger)", "Camino crítico"], ["var(--blue)", "En fecha"], ["var(--accent2)", "Completada"], ["var(--warn)", "Atrasada"]].map(([color, label]) => (
-              <div key={label} className="flex-gap"><div style={{ width: 10, height: 10, borderRadius: 2, background: color }} /><span style={{ fontSize: 9, color: "var(--muted)" }}>{label}</span></div>
-            ))}
-            {tareasOrden && (
-              <button className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={() => setTareasOrden(null)}>↺ Restablecer orden</button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {tab === "lista" && (
-        <div>
-          {tareas.length === 0 ? <div className="empty-state">Sin tareas</div> :
-            tareas.map(t => {
-              const s = STATUS_TAREA[t.status] || { label: t.status, color: "b-gray" };
-              const esAtrasada = t.fecha_fin && t.fecha_fin < today() && t.porcentaje_avance < 100;
-              return (
-                <div key={t.id} className={`tarea-row ${criticas.has(t.id) ? "critica" : esAtrasada ? "atrasada" : ""}`} onClick={() => setModalTarea({ ...t, _empresa: proyecto.empresa, _proyectoNombre: proyecto.nombre })}>
-                  <div className="flex-between mb8">
-                    <div className="flex-gap">
-                      <span className={`badge ${s.color}`}>{s.label}</span>
-                      {criticas.has(t.id) && <span className="badge b-red">CC</span>}
-                      {esAtrasada && <span className="badge b-amber">⚠ Atrasada</span>}
-                    </div>
-                    <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>{t.porcentaje_avance || 0}%</span>
-                  </div>
-                  <div style={{ fontWeight: 600, fontSize: 13, color: "var(--navy)", marginBottom: 6 }}>{t.nombre}</div>
-                  <div className="req-meta">
-                    {t.owner && <span>🎯 {t.owner}</span>}
-                    {t.responsable && <><span>·</span><span>👤 {t.responsable}</span></>}
-                    {t.fecha_inicio && <><span>·</span><span>{fmtDate(t.fecha_inicio)} → {fmtDate(t.fecha_fin)}</span></>}
-                    <span>·</span><span>{t.duracion_dias} días hábiles</span>
-                    {(t.dependencias || []).length > 0 && <><span>·</span><span>{t.dependencias.length} dep.</span></>}
-                  </div>
-                  <div className="mt8"><PctBar pct={t.porcentaje_avance || 0} critica={criticas.has(t.id)} /></div>
-                </div>
-              );
-            })
-          }
-        </div>
-      )}
-
-      {tab === "critico" && (
-        <div>
-          <div className="info-box danger mb12" style={{ fontSize: 12 }}>
-            Las tareas del camino crítico determinan la duración mínima del proyecto. Un atraso en cualquiera de estas tareas atrasa el proyecto completo.
-          </div>
-          {criticas.size === 0
-            ? <div className="empty-state">Agregá tareas con fechas y dependencias para calcular el camino crítico</div>
-            : tareas.filter(t => criticas.has(t.id)).map(t => {
-                const esAtrasada = t.fecha_fin && t.fecha_fin < today() && t.porcentaje_avance < 100;
-                return (
-                  <div key={t.id} className="tarea-row critica" onClick={() => setModalTarea({ ...t, _empresa: proyecto.empresa, _proyectoNombre: proyecto.nombre })}>
-                    <div className="flex-between mb8">
-                      <div className="flex-gap">
-                        <span className="badge b-red">Camino crítico</span>
-                        {esAtrasada && <span className="badge b-amber">⚠ Atrasada</span>}
-                      </div>
-                      <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>{t.porcentaje_avance || 0}%</span>
-                    </div>
-                    <div style={{ fontWeight: 600, fontSize: 13, color: "var(--navy)", marginBottom: 6 }}>{t.nombre}</div>
-                    <div className="req-meta">
-                      {t.responsable && <span>{t.responsable}</span>}
-                      {t.fecha_inicio && <><span>·</span><span>{fmtDate(t.fecha_inicio)} → {fmtDate(t.fecha_fin)}</span></>}
-                      <span>·</span><span>{t.duracion_dias} días hábiles</span>
-                    </div>
-                    <div className="mt8"><PctBar pct={t.porcentaje_avance || 0} critica /></div>
-                  </div>
-                );
-              })
-          }
-        </div>
-      )}
-
-      {tab === "adjuntos" && (
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         <div className="card">
-          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", letterSpacing: 1, textTransform: "uppercase", marginBottom: 14 }}>Adjuntos del proyecto</div>
-          <AdjuntosPanel proyectoId={proyectoId} notify={notify} />
-        </div>
-      )}
-
-      {tab === "adjuntos_tareas" && (
-        <AdjuntosTareasTab proyectoId={proyectoId} tareas={tareas} notify={notify} />
-      )}
-
-      {modalTarea !== null && (
-        <TareaModal
-          tarea={modalTarea?.id ? modalTarea : null}
-          proyectoId={proyectoId}
-          tareas={tareas}
-          onClose={() => setModalTarea(null)}
-          onSave={() => { setModalTarea(null); notify("Tarea guardada", "success"); load(); }}
-          onEliminar={handleEliminarTarea}
-          notify={notify}
-        />
-      )}
-      {editProyecto && (
-        <ProyectoModal
-          proyecto={proyecto}
-          onClose={() => setEditProyecto(false)}
-          onSave={() => { setEditProyecto(false); notify("Proyecto actualizado", "success"); load(); }}
-        />
-      )}
-
-      {/* ── FULLSCREEN GANTT ── */}
-      {fullscreen === "gantt" && (
-        <FullscreenWrapper title={`Gantt — ${proyecto.nombre}`} onClose={() => setFullscreen(null)}>
-          <div className="gantt-wrap" style={{ overflowX: "auto" }}>
-            <div className="gantt-header" style={{ gridTemplateColumns: cols }}>
-              <div className="gh-cell" style={{ textAlign: "center", borderRight: "1px solid var(--border)" }}>Tarea</div>
-              {meses.map((m, i) => <div key={i} className="gh-cell">{m}</div>)}
-              {meses.length === 0 && <div className="gh-cell">Línea de tiempo</div>}
-            </div>
-            {tareas.length === 0
-              ? <div className="empty-state">Sin tareas</div>
-              : tareas.map(t => {
-                  const barStyle = getBarStyle(t);
-                  return (
-                    <div key={t.id} className="gantt-row" style={{ gridTemplateColumns: cols }}>
-                      <div className="gc-label">
-                        <div className="gc-name">{t.nombre}{criticas.has(t.id) && <span className="cc-badge">CC</span>}</div>
-                        <div className="gc-sub">{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
-                      </div>
-                      <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}`, background: "#fff" }}>
-                        {barStyle
-                          ? <div className={`bar ${getBarClass(t)}`} style={barStyle}>{t.nombre}</div>
-                          : <div style={{ fontSize: 10, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>
-                        }
-                      </div>
+          <div className="card-title">Planificación por solicitante</div>
+          <table>
+            <thead><tr><th>Solicitante</th><th>Pedidos</th><th>Críticos</th><th>% Criticos</th><th>Devueltos</th></tr></thead>
+            <tbody>
+              {Object.entries(bySol).sort((a, b) => b[1].total - a[1].total).map(([sol, d]) => (
+                <tr key={sol}>
+                  <td>{sol}</td>
+                  <td className="text-mono">{d.total}</td>
+                  <td className="text-mono" style={{ color: d.urgentes > 0 ? "var(--danger)" : "inherit" }}>{d.urgentes}</td>
+                  <td>
+                    <div className="flex-gap">
+                      <div style={{ width: `${d.total ? d.urgentes / d.total * 60 : 0}px`, height: 5, background: "var(--danger)", borderRadius: 3 }} />
+                      <span className="text-mono" style={{ fontSize: 11 }}>{d.total ? Math.round(d.urgentes / d.total * 100) : 0}%</span>
                     </div>
-                  );
-                })
-            }
-            <div style={{ padding: "10px 16px", display: "flex", gap: 14, borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap" }}>
-              {[["var(--danger)", "Camino crítico"], ["var(--blue)", "En fecha"], ["var(--accent2)", "Completada"], ["var(--warn)", "Atrasada"]].map(([color, label]) => (
-                <div key={label} className="flex-gap"><div style={{ width: 10, height: 10, borderRadius: 2, background: color }} /><span style={{ fontSize: 9, color: "var(--muted)" }}>{label}</span></div>
+                  </td>
+                  <td className="text-mono" style={{ color: d.devueltas > 0 ? "var(--warn)" : "inherit" }}>{d.devueltas}</td>
+                </tr>
               ))}
-            </div>
-          </div>
-        </FullscreenWrapper>
-      )}
+              {!Object.keys(bySol).length && <tr><td colSpan={5} className="text-muted" style={{ textAlign: "center", padding: 20 }}>Sin datos</td></tr>}
+            </tbody>
+          </table>
+        </div>
 
-      {/* ── FULLSCREEN DETALLE ── */}
-      {fullscreen === "detalle" && (
-        <FullscreenWrapper title={proyecto.nombre} onClose={() => setFullscreen(null)}>
-          {/* Card resumen */}
-          <div className="card mb12">
-            <div className="flex-between">
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: "var(--navy)", marginBottom: 6 }}>{proyecto.nombre}</div>
-                <div className="flex-gap">
-                  <span className={`badge ${STATUS_PROYECTO[proyecto.status]?.color || "b-gray"}`}>{STATUS_PROYECTO[proyecto.status]?.label}</span>
-                  <span className={`badge ${proyecto.tipo === "externo" ? "b-purple" : "b-teal"}`}>{proyecto.tipo}</span>
-                  <span style={{ fontSize: 11, color: "var(--muted)" }}>{proyecto.empresa}</span>
-                  {proyecto.cliente && <span style={{ fontSize: 11, color: "var(--muted)" }}>· {proyecto.cliente}</span>}
-                  {proyecto.responsable && <span style={{ fontSize: 11, color: "var(--muted)" }}>· 👤 {proyecto.responsable}</span>}
-                </div>
-              </div>
-              <div style={{ textAlign: "right" }}>
-                <div style={{ fontFamily: "var(--mono)", fontSize: 32, fontWeight: 700, color: "var(--blue)" }}>{pct}%</div>
-                <div style={{ fontSize: 10, color: "var(--muted)" }}>avance global</div>
-              </div>
-            </div>
-            <div className="mt8"><PctBar pct={pct} /></div>
-          </div>
-          {/* Stats fila 1 */}
-          <div className="stats mb12">
-            <div className="stat"><div className="stat-label">Tareas</div><div className="stat-value" style={{ color: "var(--blue)" }}>{tareas.length}</div></div>
-            <div className="stat"><div className="stat-label">Completadas</div><div className="stat-value" style={{ color: "var(--accent2)" }}>{tareas.filter(t => t.porcentaje_avance >= 100).length}</div></div>
-            <div className="stat"><div className="stat-label">Atrasadas</div><div className="stat-value" style={{ color: "var(--danger)" }}>{atrasadas.length}</div></div>
-            <div className="stat"><div className="stat-label">Camino crítico</div><div className="stat-value" style={{ color: "var(--warn)" }}>{criticas.size}</div></div>
-          </div>
-          {/* Stats fila 2: subtareas */}
-          {(() => {
-            const todasSubs = tareas.flatMap(t => t.subtareas || []);
-            // Calcular por responsable para la tabla
-            const porResp = {};
-            tareas.forEach(t => {
-              const r = t.responsable || "Sin asignar";
-              if (!porResp[r]) porResp[r] = { total: 0, en_curso: 0, completadas: 0, atrasadas: 0, subTotal: 0, subEnCurso: 0, subCompletadas: 0, subAtrasadas: 0 };
-              const esAtrasada = t.fecha_fin && t.fecha_fin < today() && (t.porcentaje_avance||0) < 100;
-              porResp[r].total++;
-              if ((t.porcentaje_avance||0) >= 100) porResp[r].completadas++;
-              else if (esAtrasada) porResp[r].atrasadas++;
-              else if ((t.porcentaje_avance||0) > 0) porResp[r].en_curso++;
-              const misSubs = (t.subtareas || []);
-              porResp[r].subTotal += misSubs.length;
-              porResp[r].subEnCurso += misSubs.filter(s => (s.porcentaje_avance||0) > 0 && (s.porcentaje_avance||0) < 100).length;
-              porResp[r].subCompletadas += misSubs.filter(s => (s.porcentaje_avance||0) >= 100).length;
-              porResp[r].subAtrasadas += misSubs.filter(s => s.fecha_fin && s.fecha_fin < today() && (s.porcentaje_avance||0) < 100).length;
-            });
-            return (
-              <>
-                <div className="stats mb12">
-                  <div className="stat"><div className="stat-label">Subtareas total</div><div className="stat-value" style={{ color: "var(--navy)" }}>{todasSubs.length}</div></div>
-                  <div className="stat"><div className="stat-label">Pendientes</div><div className="stat-value" style={{ color: "var(--muted)" }}>{todasSubs.filter(s => (s.porcentaje_avance||0) === 0).length}</div></div>
-                  <div className="stat"><div className="stat-label">En curso</div><div className="stat-value" style={{ color: "var(--blue)" }}>{todasSubs.filter(s => (s.porcentaje_avance||0) > 0 && (s.porcentaje_avance||0) < 100).length}</div></div>
-                  <div className="stat"><div className="stat-label">Completadas</div><div className="stat-value" style={{ color: "var(--accent2)" }}>{todasSubs.filter(s => (s.porcentaje_avance||0) >= 100).length}</div></div>
-                </div>
-                {/* Tabla responsables fullscreen */}
-                <div className="card" style={{ padding: 0, overflow: "hidden", marginBottom: 16 }}>
-                  <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--border)", background: "var(--surface2)" }}>
-                    <div className="stat-label">Tareas y subtareas por responsable de ejecución</div>
-                  </div>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-                    <thead>
-                      <tr style={{ background: "var(--surface2)" }}>
-                        <th style={{ padding: "6px 12px", textAlign: "left", fontWeight: 600, color: "var(--muted)", fontSize: 9, letterSpacing: .5, textTransform: "uppercase", borderBottom: "1px solid var(--border)" }}>Responsable</th>
-                        <th style={{ padding: "6px 8px", textAlign: "center", fontWeight: 600, color: "var(--muted)", fontSize: 9, letterSpacing: .5, textTransform: "uppercase", borderBottom: "1px solid var(--border)" }} colSpan={4}>— Tareas —</th>
-                        <th style={{ padding: "6px 8px", textAlign: "center", fontWeight: 600, color: "var(--muted)", fontSize: 9, letterSpacing: .5, textTransform: "uppercase", borderBottom: "1px solid var(--border)", borderLeft: "2px solid var(--border)" }} colSpan={4}>— Subtareas —</th>
-                      </tr>
-                      <tr style={{ background: "var(--surface2)" }}>
-                        <th style={{ padding: "4px 12px", borderBottom: "2px solid var(--border)" }}></th>
-                        {["Total","En curso","Complet.","Atras.","Total","En curso","Complet.","Atras."].map((h, i) => (
-                          <th key={i} style={{ padding: "4px 8px", textAlign: "center", fontWeight: 600, color: "var(--muted2)", fontSize: 9, textTransform: "uppercase", borderBottom: "2px solid var(--border)", borderLeft: i === 4 ? "2px solid var(--border)" : "none" }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(porResp).map(([resp, s], idx) => {
-                        const bg = idx % 2 === 0 ? "#fff" : "var(--surface2)";
-                        const cell = (val, color) => <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: val > 0 ? 700 : 400, color: val > 0 ? color : "var(--muted2)", background: bg }}>{val > 0 ? val : "—"}</td>;
-                        return (
-                          <tr key={resp}>
-                            <td style={{ padding: "7px 12px", fontWeight: 600, color: "var(--navy)", fontSize: 11, background: bg, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={resp}>👤 {resp}</td>
-                            {cell(s.total, "var(--navy)")}
-                            {cell(s.en_curso, "var(--blue)")}
-                            {cell(s.completadas, "var(--accent2)")}
-                            <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: s.atrasadas > 0 ? 700 : 400, color: s.atrasadas > 0 ? "var(--danger)" : "var(--muted2)", background: bg }}>{s.atrasadas > 0 ? `⚠ ${s.atrasadas}` : "—"}</td>
-                            <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: s.subTotal > 0 ? 700 : 400, color: "var(--navy)", background: bg, borderLeft: "2px solid var(--border)" }}>{s.subTotal > 0 ? s.subTotal : "—"}</td>
-                            {cell(s.subEnCurso, "var(--blue)")}
-                            {cell(s.subCompletadas, "var(--accent2)")}
-                            <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: s.subAtrasadas > 0 ? 700 : 400, color: s.subAtrasadas > 0 ? "var(--danger)" : "var(--muted2)", background: bg }}>{s.subAtrasadas > 0 ? `⚠ ${s.subAtrasadas}` : "—"}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            );
-          })()}
-          {/* Gantt */}
-          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-            <div style={{ padding: "12px 16px", background: "var(--surface2)", borderBottom: "1px solid var(--border)", fontSize: 11, fontWeight: 700, color: "var(--muted)", letterSpacing: 1, textTransform: "uppercase" }}>Gantt</div>
-            <div className="gantt-wrap" style={{ overflowX: "auto" }}>
-              <div className="gantt-header" style={{ gridTemplateColumns: cols }}>
-                <div className="gh-cell" style={{ textAlign: "center", borderRight: "1px solid var(--border)" }}>Tarea</div>
-                {meses.map((m, i) => <div key={i} className="gh-cell">{m}</div>)}
-                {meses.length === 0 && <div className="gh-cell">Línea de tiempo</div>}
-              </div>
-              {tareas.map(t => {
-                const barStyle = getBarStyle(t);
-                return (
-                  <div key={t.id} className="gantt-row" style={{ gridTemplateColumns: cols }}>
-                    <div className="gc-label">
-                      <div className="gc-name">{t.nombre}{criticas.has(t.id) && <span className="cc-badge">CC</span>}</div>
-                      <div className="gc-sub">{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
-                    </div>
-                    <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}` }}>
-                      {barStyle
-                        ? <div className={`bar ${getBarClass(t)}`} style={barStyle}>{t.nombre}</div>
-                        : <div style={{ fontSize: 10, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>
-                      }
-                    </div>
-                  </div>
-                );
-              })}
+        <div className="card">
+          <div className="card-title">Motivos de rechazo / devolución</div>
+          {Object.entries(byRechazo).length === 0
+            ? <div className="empty-state" style={{ padding: 20 }}><div>Sin rechazos registrados</div></div>
+            : Object.entries(byRechazo).sort((a, b) => b[1] - a[1]).map(([cat, n]) => (
+              <KpiBar key={cat} label={cat} value={n} max={Math.max(...Object.values(byRechazo))} color="var(--danger)" />
+            ))
+          }
+        </div>
+
+        <div className="card">
+          <div className="card-title">Proveedores utilizados</div>
+          <table>
+            <thead><tr><th>Proveedor</th><th>OCs</th><th>Comprado</th></tr></thead>
+            <tbody>
+              {Object.entries(byProv).sort((a, b) => b[1].total - a[1].total).map(([prov, d]) => (
+                <tr key={prov}>
+                  <td>{prov}</td>
+                  <td className="text-mono">{d.count}</td>
+                  <td className="text-mono">{fmt(d.total, d.cur)}</td>
+                </tr>
+              ))}
+              {!Object.keys(byProv).length && <tr><td colSpan={3} className="text-muted" style={{ textAlign: "center", padding: 20 }}>Sin datos</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="card">
+          <div className="card-title">Velocidad del departamento</div>
+          <KpiBar label="Promedio solicitud → revisión" value={avgRevision.toFixed(1)} max={10} color="var(--accent)" suffix=" días" />
+          <div className="info-box mt12 accent">
+            <div style={{ fontSize: 12, lineHeight: 1.6 }}>
+              <strong>Objetivo Lean:</strong><br />
+              · Solicitud → Revisión: &lt; 1 día<br />
+              · Revisión → Aprobación: &lt; 2 días<br />
+              · % Urgencias críticas: &lt; 20%<br />
+              · Devoluciones por calidad: &lt; 10%
             </div>
           </div>
-        </FullscreenWrapper>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── PAGE: PROVEEDORES ───────────────────────────────────────────────────────
+function PageProveedores({ notify }) {
+  const [provs, setProvs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(false);
+  const [form, setForm] = useState({ nombre: "", rubro: "", contacto: "", email: "", telefono: "", notas: "" });
+
+  useEffect(() => { api.getProveedores().then(d => { setProvs(d); setLoading(false); }); }, []);
+
+  const handleSave = async () => {
+    if (!form.nombre) return;
+    const nuevo = await api.crearProveedor(form);
+    setProvs(p => [...p, nuevo]);
+    setModal(false);
+    setForm({ nombre: "", rubro: "", contacto: "", email: "", telefono: "", notas: "" });
+    notify("Proveedor agregado", "success");
+  };
+
+  return (
+    <div>
+      <div className="card">
+        <div className="card-title">
+          Maestro de Proveedores
+          <button className="btn btn-primary btn-sm" onClick={() => setModal(true)}>+ Agregar</button>
+        </div>
+        {loading ? <div className="loading"><span className="spin">◌</span></div> : (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Nombre</th><th>Rubro</th><th>Contacto</th><th>Email</th><th>Teléfono</th></tr></thead>
+              <tbody>
+                {provs.map(p => (
+                  <tr key={p.id}>
+                    <td style={{ fontWeight: 500 }}>{p.nombre}</td>
+                    <td className="text-muted">{p.rubro || "—"}</td>
+                    <td>{p.contacto || "—"}</td>
+                    <td className="text-mono" style={{ fontSize: 12 }}>{p.email || "—"}</td>
+                    <td className="text-mono" style={{ fontSize: 12 }}>{p.telefono || "—"}</td>
+                  </tr>
+                ))}
+                {!provs.length && <tr><td colSpan={5}><div className="empty-state">Sin proveedores</div></td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {modal && (
+        <div className="overlay" onClick={e => e.target === e.currentTarget && setModal(false)}>
+          <div className="modal">
+            <div className="modal-header">
+              <div className="modal-title">Nuevo Proveedor</div>
+              <button className="modal-close" onClick={() => setModal(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div className="form-grid">
+                <FG label="Nombre *"><input value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} /></FG>
+                <FG label="Rubro"><input value={form.rubro} onChange={e => setForm(f => ({ ...f, rubro: e.target.value }))} /></FG>
+                <FG label="Contacto"><input value={form.contacto} onChange={e => setForm(f => ({ ...f, contacto: e.target.value }))} /></FG>
+                <FG label="Email"><input value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} /></FG>
+                <FG label="Teléfono"><input value={form.telefono} onChange={e => setForm(f => ({ ...f, telefono: e.target.value }))} /></FG>
+              </div>
+              <FG label="Notas"><textarea value={form.notas} onChange={e => setForm(f => ({ ...f, notas: e.target.value }))} /></FG>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setModal(false)}>Cancelar</button>
+              <button className="btn btn-primary" onClick={handleSave}>Guardar</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
-// ─── ROOT APP ─────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+//  ROOT APP
+// ═══════════════════════════════════════════════════════════════════════════
+const USUARIO = "Comprador";
+
 export default function App() {
-  const [page, setPage]                         = useState("proyectos");
-  const [proyectoSeleccionado, setProyecto]     = useState(null);
-  const [notif, setNotif]                       = useState(null);
-  const [filtroSidebar, setFiltroSidebar]       = useState("");
-  const [sidebarOpen, setSidebarOpen]           = useState(false);
+  const [page, setPage] = useState("requisiciones");
+  const [notif, setNotif] = useState(null);
+  const [reqs, setReqs] = useState([]);
 
   const notify = useCallback((text, type = "info") => {
     setNotif({ text, type });
     setTimeout(() => setNotif(null), 4000);
   }, []);
 
-  const pageTitles = {
-    proyectos: "Todos los proyectos",
-    atrasados: "Proyectos atrasados",
-    detalle: proyectoSeleccionado?.nombre || "Proyecto",
-  };
+  // Cargar conteo para badge
+  useEffect(() => {
+    api.getRequisiciones().then(d => setReqs(d));
+  }, [page]);
 
-  const NI = ({ id, icon, label }) => (
-    <div className={`ni ${page === id ? "active" : ""}`} onClick={() => { setPage(id); setSidebarOpen(false); }}>
-      <span className="ni-icon">{icon}</span>
-      <span>{label}</span>
-    </div>
-  );
+  const pendientes = reqs.filter(r => ["pendiente_revision", "en_revision"].includes(r.status)).length;
+
+  const nav = [
+    { id: "requisiciones", icon: "📋", label: "Requisiciones", badge: pendientes || null },
+    { id: "nueva", icon: "✚", label: "Nueva Requisición" },
+    { id: "reportes", icon: "📊", label: "KPIs & Reportes" },
+    { id: "proveedores", icon: "🏭", label: "Proveedores" },
+  ];
+
+  const titles = {
+    requisiciones: "REQUISICIONES DE COMPRA",
+    nueva: "NUEVA REQUISICIÓN",
+    reportes: "KPIs & REPORTES LEAN",
+    proveedores: "MAESTRO DE PROVEEDORES",
+  };
 
   return (
     <>
       <style>{CSS}</style>
       <div className="app">
-        {/* Overlay mobile */}
-        <div className={`sidebar-overlay ${sidebarOpen ? "open" : ""}`} onClick={() => setSidebarOpen(false)} />
-
-        <nav className={`sidebar ${sidebarOpen ? "open" : ""}`}>
+        <nav className="sidebar">
           <div className="sidebar-header">
-            <div className="sidebar-logo-wrap">
-              <img src="/PL.png" alt="Parana Logística" className="sidebar-logo-img" onError={e => { e.currentTarget.style.display = "none"; }} />
-              <div>
-                <div className="sidebar-logo-main">Projects</div>
-                <div className="sidebar-logo-sub">Terra Mare Group</div>
-              </div>
-            </div>
+            <div className="sidebar-logo">◈ Compras</div>
+            <div className="sidebar-sub">Terra Mare · Parana Logística</div>
           </div>
-          <div className="nav-section">Vistas</div>
-          <NI id="proyectos" icon="▦" label="Todos los proyectos" />
-          <NI id="atrasados" icon="⚠" label="Atrasados" />
-          <div className="nav-section">Empresas</div>
-          {EMPRESAS.map(e => (
-            <div key={e}
-              className={`ni ${filtroSidebar === e ? "active" : ""}`}
-              onClick={() => { setFiltroSidebar(filtroSidebar === e ? "" : e); setPage("proyectos"); setSidebarOpen(false); }}>
-              <span className="ni-icon">·</span>
-              <span style={{ fontSize: 11 }}>{e}</span>
+          <div className="nav-section">Módulos</div>
+          {nav.map(n => (
+            <div key={n.id} className={`nav-item ${page === n.id ? "active" : ""}`} onClick={() => setPage(n.id)}>
+              <span>{n.icon}</span>
+              <span>{n.label}</span>
+              {n.badge ? <span className={`nav-badge ${n.badge > 3 ? "red" : ""}`}>{n.badge}</span> : null}
             </div>
           ))}
           <div style={{ flex: 1 }} />
-          <div style={{ padding: "14px 18px", borderTop: "1px solid rgba(255,255,255,.1)" }}>
-            <div className="ni back" onClick={() => window.open(PORTAL_URL, "_self")}>
-              <span className="ni-icon">←</span><span>Volver al portal</span>
-            </div>
-            <div style={{ fontSize: 9, color: "rgba(255,255,255,.3)", fontFamily: "var(--mono)", letterSpacing: 1, marginTop: 8 }}>PROJECTS v1.2</div>
+          <div style={{ padding: "16px", fontSize: 11, color: "var(--muted2)", fontFamily: "var(--mono)", borderTop: "1px solid var(--border)" }}>
+            v1.0 MVP<br />
+            <span style={{ color: "var(--border2)" }}>Xubio API: pendiente</span><br />
+            <span style={{ color: "var(--border2)" }}>Power Automate: pendiente</span>
           </div>
         </nav>
 
         <div className="main">
           <div className="topbar">
-            {/* Hamburger mobile */}
-            <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label="Menú">
-              <span /><span /><span />
-            </button>
-            <div className="topbar-title">{pageTitles[page] || page}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#DBEAFE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--blue)", fontWeight: 700 }}>G</div>
-              <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 500 }}>{USUARIO}</span>
+            <div className="topbar-left">
+              <div className="topbar-title">{titles[page]}</div>
+            </div>
+            <div className="topbar-right">
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>👤 {USUARIO}</span>
             </div>
           </div>
           <div className="content">
-            {(page === "proyectos" || page === "atrasados") && (
-              <PageProyectos
-                onSelectProyecto={p => { setProyecto(p); setPage("detalle"); }}
+            <div className="demo-banner">
+              ⚠ Modo demo — los datos son de ejemplo. Para conectar con Supabase, seguí el README incluido.
+            </div>
+
+            {page === "requisiciones" && (
+              <PageRequisiciones
+                onNew={() => setPage("nueva")}
                 notify={notify}
+                usuario={USUARIO}
               />
             )}
-            {page === "detalle" && proyectoSeleccionado && (
-              <PageDetalle
-                proyectoId={proyectoSeleccionado.id}
-                onBack={() => setPage("proyectos")}
+            {page === "nueva" && (
+              <PageNueva
+                onSaved={() => setPage("requisiciones")}
+                onCancel={() => setPage("requisiciones")}
                 notify={notify}
+                usuario={USUARIO}
               />
             )}
+            {page === "reportes" && <PageReportes />}
+            {page === "proveedores" && <PageProveedores notify={notify} />}
           </div>
         </div>
       </div>
