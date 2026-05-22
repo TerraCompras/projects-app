@@ -5,6 +5,21 @@ const PORTAL_URL = "https://erp-portal-fawn.vercel.app";
 const EMPRESAS = ["Parana Logistica", "Clean Sea", "Terra Mare"];
 const USUARIO = "Gerencia";
 
+// ─── CATÁLOGOS COMPRAS (espejo de compras-app) ────────────────────────────────
+const BASES_POR_EMPRESA = {
+  "Parana Logistica": ["Atlantic Dama", "Golondrina de Mar", "Base Zárate", "Base Buenos Aires"],
+  "Clean Sea": ["Clean Sea 1", "Clean Sea 2", "Base Dock Sud"],
+  "Terra Mare": ["Oficina Central", "Base Zárate"],
+};
+const URGENCIA_OPTIONS = ["Normal", "Alta", "Critica"];
+const SUBAREA_TECNICA = {
+  "Parana Logistica": ["Motores", "Cubierta", "Electricidad", "Navegación", "Seguridad", "Casco", "Habitabilidad", "Otro"],
+  "Clean Sea": ["Equipos", "Cubierta", "Electricidad", "Seguridad", "Otro"],
+  "Terra Mare": ["Oficina", "Equipos", "Mantenimiento", "Otro"],
+};
+// FIX A6: estos valores deben coincidir con TIPOS_REQUISICION en compras-app/src/lib/catalogos.js
+const TIPOS_REQUISICION_PROJECTS = ["Bienes", "Servicios", "Mixto"];
+
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -137,6 +152,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 .fs-btn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:var(--r);padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer;font-family:var(--sans);display:flex;align-items:center;gap:6px;transition:all .15s}
 .fs-btn:hover{background:rgba(255,255,255,.25)}
 
+.btn-cotizar{background:transparent;color:#065F46;border-color:#A7F3D0;background:#D1FAE5}.btn-cotizar:hover{background:#A7F3D0}
+.cotizar-badge{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;background:#D1FAE5;color:#065F46;border:1px solid #A7F3D0;white-space:nowrap}
+
 /* ── HAMBURGER (mobile) ── */
 .hamburger{display:none;background:none;border:none;cursor:pointer;padding:4px;flex-direction:column;gap:4px}
 .hamburger span{display:block;width:20px;height:2px;background:var(--navy);border-radius:2px;transition:all .2s}
@@ -252,10 +270,15 @@ const api = {
     // Insert sin select de relaciones para evitar schema cache
     const { data, error } = await supabase.from("proyectos").insert([proy]).select("id, nombre, empresa, status, tipo, cliente, responsable, fecha_inicio, fecha_fin, descripcion, created_at").single();
     if (error) throw error;
-    if (recursos?.length)
-      await supabase.from("proyecto_recursos").insert(recursos.map(r => ({ nombre: r, proyecto_id: data.id })));
-    if (contactos?.length)
-      await supabase.from("proyecto_contactos").insert(contactos.map(c => ({ ...c, proyecto_id: data.id })));
+    // FIX A2: error check en recursos y contactos
+    if (recursos?.length) {
+      const { error: eR } = await supabase.from("proyecto_recursos").insert(recursos.map(r => ({ nombre: r, proyecto_id: data.id })));
+      if (eR) throw new Error("Error insertando recursos: " + eR.message);
+    }
+    if (contactos?.length) {
+      const { error: eC } = await supabase.from("proyecto_contactos").insert(contactos.map(c => ({ ...c, proyecto_id: data.id })));
+      if (eC) throw new Error("Error insertando contactos: " + eC.message);
+    }
     return data;
   },
   async actualizarProyecto(id, cambios, recursos, contactos) {
@@ -267,8 +290,13 @@ const api = {
     if (errUpdate) throw new Error("Error actualizando proyecto: " + errUpdate.message);
     // Reemplazar recursos
     if (recursos !== undefined) {
-      await supabase.from("proyecto_recursos").delete().eq("proyecto_id", id);
-      if (recursos.length) await supabase.from("proyecto_recursos").insert(recursos.map(r => ({ nombre: r, proyecto_id: id })));
+      // FIX A3: error check en delete recursos
+      const { error: errDelR } = await supabase.from("proyecto_recursos").delete().eq("proyecto_id", id);
+      if (errDelR) throw new Error("Error borrando recursos: " + errDelR.message);
+      if (recursos.length) {
+        const { error: errInsR } = await supabase.from("proyecto_recursos").insert(recursos.map(r => ({ nombre: r, proyecto_id: id })));
+        if (errInsR) throw new Error("Error insertando recursos: " + errInsR.message);
+      }
     }
     // Reemplazar contactos
     if (contactos !== undefined) {
@@ -281,12 +309,22 @@ const api = {
     }
   },
   async eliminarProyecto(id) {
+    // FIX C3: borrar en orden correcto para evitar FK violations
+    // 1. Subtareas (dependen de proyecto_tareas)
+    const { error: e0 } = await supabase.from("proyecto_subtareas").delete().eq("proyecto_id", id);
+    if (e0) throw e0;
+    // 2. Adjuntos (pueden tener tarea_id que referencia proyecto_tareas)
+    const { error: eAdj } = await supabase.from("proyecto_adjuntos").delete().eq("proyecto_id", id);
+    if (eAdj) throw eAdj;
+    // 3. Tareas
     const { error: e1 } = await supabase.from("proyecto_tareas").delete().eq("proyecto_id", id);
     if (e1) throw e1;
+    // 4. Recursos y contactos
     const { error: e2 } = await supabase.from("proyecto_recursos").delete().eq("proyecto_id", id);
     if (e2) throw e2;
     const { error: e3 } = await supabase.from("proyecto_contactos").delete().eq("proyecto_id", id);
     if (e3) throw e3;
+    // 5. Proyecto
     const { error: e4 } = await supabase.from("proyectos").delete().eq("id", id);
     if (e4) throw e4;
   },
@@ -322,6 +360,9 @@ const api = {
     return data;
   },
   async eliminarTarea(id) {
+    // FIX C4: borrar subtareas primero para evitar FK violation
+    const { error: eSub } = await supabase.from("proyecto_subtareas").delete().eq("tarea_id", id);
+    if (eSub) throw eSub;
     const { error } = await supabase.from("proyecto_tareas").delete().eq("id", id);
     if (error) throw error;
   },
@@ -358,6 +399,34 @@ const api = {
     if (path) await supabase.storage.from("proyecto-adjuntos").remove([path]);
     const { error } = await supabase.from("proyecto_adjuntos").delete().eq("id", id);
     if (error) throw error;
+  },
+  // ── Integración con módulo Compras ──
+  async crearRequisicionDesdeProjects(req, items) {
+    // FIX C1: proyecto_origen_id / tarea_origen_id se guardan en observaciones
+    // hasta que se creen las columnas en Supabase. No se incluyen en el insert.
+    const { proyecto_origen_id: _poi, tarea_origen_id: _toi, ...reqLimpio } = req;
+    const { data: nueva, error } = await supabase
+      .from("requisiciones")
+      .insert([{ ...reqLimpio, status: "pendiente_aprobacion" }])
+      .select()
+      .single();
+    if (error) throw error;
+    // FIX C2: error check en insert de items
+    if (items?.length) {
+      const { error: errItems } = await supabase.from("requisicion_items").insert(
+        items.map((it, i) => ({ ...it, requisicion_id: nueva.id, nro_linea: i + 1 }))
+      );
+      if (errItems) throw new Error("Error insertando ítems: " + errItems.message);
+    }
+    // FIX C2: error check en historial
+    const { error: errHist } = await supabase.from("requisicion_historial").insert([{
+      requisicion_id: nueva.id,
+      evento: "Requisición creada desde módulo Projects",
+      usuario: USUARIO,
+      status_nuevo: "pendiente_aprobacion",
+    }]);
+    if (errHist) throw new Error("Error en historial: " + errHist.message);
+    return nueva;
   },
   async getSubtareas(tareaId) {
     const { data, error } = await supabase.from("proyecto_subtareas").select("*").eq("tarea_id", tareaId).order("fecha_inicio", { ascending: true });
@@ -419,6 +488,205 @@ function PctBar({ pct, critica }) {
   return <div className="pct-bar"><div className={`pct-fill ${critica ? "critical" : pct >= 100 ? "done" : ""}`} style={{ width: `${Math.min(pct, 100)}%` }} /></div>;
 }
 
+// ─── MODAL: COTIZAR DESDE PROJECTS ───────────────────────────────────────────
+// Se abre desde tarea o subtarea. Genera una requisición en el módulo Compras.
+function CotizarDesdeProjectsModal({ origen, proyectoEmpresa, proyectoNombre, onClose, notify }) {
+  // origen: { tipo: "tarea"|"subtarea", nombre, id, ... }
+  const empresaDefault = EMPRESAS.includes(proyectoEmpresa) ? proyectoEmpresa : "Parana Logistica";
+  const [form, setForm] = useState({
+    empresa: empresaDefault,
+    base_buque: "",
+    subarea: "",
+    urgencia: "Normal",
+    tipo_requisicion: "Bienes",
+    solicitado_por: USUARIO,
+    fecha_necesaria: "",
+    // FIX C1: referencia al origen guardada en observaciones (hasta migración DB)
+    observaciones: `Generado desde proyecto: ${proyectoNombre} — ${origen.tipo === "subtarea" ? "Subtarea" : "Tarea"}: ${origen.nombre} [ref:proy=${origen.proyectoId || ""},tarea=${origen.id || ""}]`,
+  });
+  const [items, setItems] = useState([
+    { id: "i1", descripcion: origen.nombre, cantidad: 1, unidad: "Uni", proveedor_sugerido: "" }
+  ]);
+  const [saving, setSaving] = useState(false);
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const setItem = (i, k, v) => { const its = [...items]; its[i] = { ...its[i], [k]: v }; setItems(its); };
+  const addItem = () => setItems(prev => [...prev, { id: `i${Date.now()}`, descripcion: "", cantidad: 1, unidad: "Uni", proveedor_sugerido: "" }]);
+
+  const bases = BASES_POR_EMPRESA[form.empresa] || [];
+  const subareas = SUBAREA_TECNICA[form.empresa] || [];
+
+  const handleSave = async () => {
+    if (!form.base_buque || !form.subarea || !form.solicitado_por) {
+      alert("Completá: Base/Buque, Sub-área y Solicitado por");
+      return;
+    }
+    if (!items.some(it => it.descripcion.trim())) {
+      alert("Agregá al menos un ítem con descripción");
+      return;
+    }
+    setSaving(true);
+    try {
+      const reqData = {
+        titulo: `[Projects] ${origen.nombre}`,
+        empresa: form.empresa,
+        area: "Tecnica",
+        base_buque: form.base_buque,
+        subarea: form.subarea,
+        urgencia: form.urgencia,
+        tipo_requisicion: form.tipo_requisicion,
+        solicitado_por: form.solicitado_por,
+        fecha_necesaria: form.fecha_necesaria || null,
+        observaciones: form.observaciones,
+        // FIX C1: columnas de trazabilidad en observaciones por ahora.
+        // Una vez ejecutada la migración SQL se pueden descomentar:
+        // proyecto_origen_id: origen.proyectoId || null,
+        // tarea_origen_id: origen.id || null,
+      };
+      const cleanItems = items
+        .filter(it => it.descripcion.trim())
+        .map(({ id: _id, ...rest }) => rest);
+      const nueva = await api.crearRequisicionDesdeProjects(reqData, cleanItems);
+      // FIX A1: nro_solicitud puede ser null si es generado por trigger
+      const nroDisplay = nueva.nro_solicitud
+        ? String(nueva.nro_solicitud).padStart(4, "0")
+        : nueva.id.slice(0, 8).toUpperCase();
+      notify(`✓ Requisición REQ-${nroDisplay} creada en Compras`, "success");
+      onClose();
+    } catch (e) {
+      alert("Error al crear requisición: " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 680 }}>
+        <div className="mhdr">
+          <div>
+            <div className="mtitle">🛒 Generar pedido de compra</div>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>
+              {origen.tipo === "subtarea" ? "Subtarea" : "Tarea"}: <strong>{origen.nombre}</strong>
+            </div>
+          </div>
+          <button className="mclose" onClick={onClose}>✕</button>
+        </div>
+        <div className="mbody">
+
+          <div className="info-box accent mb12" style={{ fontSize: 11 }}>
+            Se creará una requisición en el módulo Compras con estado <strong>Pendiente de aprobación</strong>.
+          </div>
+
+          {/* Empresa + Base */}
+          <div className="form-grid">
+            <FG label="Empresa *">
+              <select value={form.empresa} onChange={e => { set("empresa", e.target.value); set("base_buque", ""); set("subarea", ""); }}>
+                {EMPRESAS.map(e => <option key={e}>{e}</option>)}
+              </select>
+            </FG>
+            <FG label="Base / Buque *">
+              <select value={form.base_buque} onChange={e => set("base_buque", e.target.value)}>
+                <option value="">Seleccionar...</option>
+                {bases.map(b => <option key={b}>{b}</option>)}
+              </select>
+            </FG>
+            <FG label="Sub-área *">
+              <select value={form.subarea} onChange={e => set("subarea", e.target.value)}>
+                <option value="">Seleccionar...</option>
+                {subareas.map(s => <option key={s}>{s}</option>)}
+              </select>
+            </FG>
+            <FG label="Urgencia">
+              <select value={form.urgencia} onChange={e => set("urgencia", e.target.value)}>
+                {URGENCIA_OPTIONS.map(u => <option key={u}>{u}</option>)}
+              </select>
+            </FG>
+            <FG label="Tipo de requisición">
+              <select value={form.tipo_requisicion} onChange={e => set("tipo_requisicion", e.target.value)}>
+                {TIPOS_REQUISICION_PROJECTS.map(t => <option key={t}>{t}</option>)}
+              </select>
+            </FG>
+            <FG label="Solicitado por *">
+              <input value={form.solicitado_por} onChange={e => set("solicitado_por", e.target.value)} />
+            </FG>
+            <FG label="Fecha necesaria">
+              <input type="date" value={form.fecha_necesaria} onChange={e => set("fecha_necesaria", e.target.value)} />
+            </FG>
+          </div>
+          <FG label="Observaciones" full>
+            <textarea value={form.observaciones} onChange={e => set("observaciones", e.target.value)} rows={2} />
+          </FG>
+
+          {/* Ítems */}
+          <div className="form-section" style={{ marginTop: 18 }}>Ítems a cotizar</div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: "var(--surface2)" }}>
+                  <th style={{ padding: "7px 10px", textAlign: "left", fontSize: 10, color: "var(--muted)", fontWeight: 600, letterSpacing: .5, textTransform: "uppercase", borderBottom: "2px solid var(--border)", width: "50%" }}>Descripción *</th>
+                  <th style={{ padding: "7px 10px", textAlign: "left", fontSize: 10, color: "var(--muted)", fontWeight: 600, letterSpacing: .5, textTransform: "uppercase", borderBottom: "2px solid var(--border)" }}>Cant.</th>
+                  <th style={{ padding: "7px 10px", textAlign: "left", fontSize: 10, color: "var(--muted)", fontWeight: 600, letterSpacing: .5, textTransform: "uppercase", borderBottom: "2px solid var(--border)" }}>Unid.</th>
+                  <th style={{ padding: "7px 10px", borderBottom: "2px solid var(--border)" }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it, i) => (
+                  <tr key={it.id}>
+                    <td style={{ padding: "5px 8px", borderBottom: "1px solid var(--border)" }}>
+                      <input
+                        value={it.descripcion}
+                        onChange={e => setItem(i, "descripcion", e.target.value)}
+                        placeholder="Descripción del material o servicio"
+                        style={{ width: "100%", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r)", padding: "5px 8px", fontFamily: "var(--sans)", fontSize: 12, outline: "none" }}
+                      />
+                    </td>
+                    <td style={{ padding: "5px 8px", borderBottom: "1px solid var(--border)" }}>
+                      <input
+                        type="number" min={1} value={it.cantidad}
+                        onChange={e => setItem(i, "cantidad", parseInt(e.target.value) || 1)}
+                        style={{ width: 60, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r)", padding: "5px 8px", fontFamily: "var(--mono)", fontSize: 12, outline: "none" }}
+                      />
+                    </td>
+                    <td style={{ padding: "5px 8px", borderBottom: "1px solid var(--border)" }}>
+                      <input
+                        value={it.unidad}
+                        onChange={e => setItem(i, "unidad", e.target.value)}
+                        style={{ width: 60, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "var(--r)", padding: "5px 8px", fontFamily: "var(--mono)", fontSize: 12, outline: "none" }}
+                      />
+                    </td>
+                    <td style={{ padding: "5px 8px", borderBottom: "1px solid var(--border)" }}>
+                      {items.length > 1 && (
+                        <button
+                          onClick={() => setItems(prev => prev.filter((_, j) => j !== i))}
+                          style={{ background: "none", border: "none", color: "var(--muted2)", cursor: "pointer", fontSize: 13 }}
+                          onMouseEnter={e => e.currentTarget.style.color = "var(--danger)"}
+                          onMouseLeave={e => e.currentTarget.style.color = "var(--muted2)"}
+                        >✕</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <button className="btn btn-ghost btn-sm mt8" onClick={addItem}>+ Agregar ítem</button>
+
+        </div>
+        <div className="mftr">
+          <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+          <button
+            className="btn btn-cotizar"
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {saving ? "Creando..." : "🛒 Crear pedido de compra"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── MODAL PROYECTO ───────────────────────────────────────────────────────────
 function ProyectoModal({ proyecto, onClose, onSave }) {
   const [form, setForm] = useState({
@@ -444,7 +712,8 @@ function ProyectoModal({ proyecto, onClose, onSave }) {
 
   useEffect(() => {
     Promise.all([api.getPerfiles(), api.getRecursosCatalogo()])
-      .then(([p, r]) => { setPerfiles(p); setRecursosCatalogo(r); });
+      .then(([p, r]) => { setPerfiles(p); setRecursosCatalogo(r); })
+      .catch(e => console.error("Error cargando catálogos:", e));
   }, []);
 
   // ── Recursos ──
@@ -490,7 +759,7 @@ function ProyectoModal({ proyecto, onClose, onSave }) {
         await api.crearProyecto(form, recursos, contactosValidos);
       }
       onSave();
-    } catch (e) { console.error("Error completo:", e); alert("Error: " + (e.message || JSON.stringify(e))); }
+    } catch (e) { alert("Error: " + (e.message || JSON.stringify(e))); }
     finally { setSaving(false); }
   };
 
@@ -624,7 +893,7 @@ function ProyectoModal({ proyecto, onClose, onSave }) {
 }
 
 // ─── MODAL TAREA ──────────────────────────────────────────────────────────────
-function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar }) {
+function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar, notify }) {
   const parseDias = (d) => Array.isArray(d) && d.length === 7 ? d : [...DIAS_DEFAULT];
   const [form, setForm] = useState({
     proyecto_id: proyectoId, nombre: "", owner: "", responsable: "",
@@ -643,12 +912,13 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar }) 
   const [tabModal, setTabModal]         = useState(tarea?._openSubtarea ? "subtareas" : "datos");
   const [editSubtareaId, setEditSubtareaId] = useState(null);
   const [subForm, setSubForm]           = useState({ descripcion: "", fecha_inicio: "", fecha_fin: "", porcentaje_avance: 0, responsable: "" });
+  const [cotizarOrigen, setCotizarOrigen] = useState(null); // { tipo, nombre, id, proyectoId }
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const setSub = (k, v) => setSubForm(f => ({ ...f, [k]: v }));
 
   useEffect(() => {
-    api.getPerfiles().then(setPerfiles);
+    api.getPerfiles().then(setPerfiles).catch(e => console.error("Perfiles:", e));
     if (tarea?.id) {
       api.getSubtareas(tarea.id).then(subs => {
         setSubtareas(subs);
@@ -658,7 +928,7 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar }) 
           setEditSubtareaId(s.id);
           setSubForm({ descripcion: s.descripcion, fecha_inicio: s.fecha_inicio || "", fecha_fin: s.fecha_fin || "", porcentaje_avance: s.porcentaje_avance || 0, responsable: s.responsable || "" });
         }
-      });
+      }).catch(e => console.error("Subtareas:", e));
     }
   }, [tarea?.id]);
 
@@ -864,6 +1134,10 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar }) 
                           <div className="flex-between">
                             <div style={{ fontWeight: 600, fontSize: 13, color: "var(--navy)" }}>{s.descripcion}</div>
                             <div className="flex-gap">
+                              <button
+                                className="btn btn-cotizar btn-sm"
+                                onClick={() => setCotizarOrigen({ tipo: "subtarea", nombre: s.descripcion, id: s.id, proyectoId, proyectoEmpresa: tarea?._empresa, proyectoNombre: tarea?._proyectoNombre })}
+                              >🛒</button>
                               <button className="btn btn-ghost btn-sm" onClick={() => handleEditarSubtarea(s)}>✏</button>
                               <button
                                 onClick={() => handleEliminarSubtarea(s.id)}
@@ -910,12 +1184,29 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar }) 
             )}
           </div>
           <div className="flex-gap">
+            {/* Botón cotizar tarea */}
+            {tarea?.id && (
+              <button
+                className="btn btn-cotizar btn-sm"
+                onClick={() => setCotizarOrigen({ tipo: "tarea", nombre: tarea.nombre, id: tarea.id, proyectoId, proyectoEmpresa: tarea._empresa, proyectoNombre: tarea._proyectoNombre })}
+              >🛒 Cotizar</button>
+            )}
             <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
             <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? "Guardando..." : "Guardar tarea"}</button>
           </div>
         </div>
       </div>
     </div>
+    {/* Modal de cotización */}
+    {cotizarOrigen && (
+      <CotizarDesdeProjectsModal
+        origen={cotizarOrigen}
+        proyectoEmpresa={cotizarOrigen.proyectoEmpresa || null}
+        proyectoNombre={cotizarOrigen.proyectoNombre || ""}
+        onClose={() => setCotizarOrigen(null)}
+        notify={notify || (() => {})}
+      />
+    )}
   );
 }
 
@@ -1625,7 +1916,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                       onDragStart={() => handleDragStart(i)}
                       onDragOver={e => handleDragOver(e, i)}
                       onDragEnd={handleDragEnd}
-                      onClick={() => setModalTarea(t)}
+                      onClick={() => setModalTarea({ ...t, _empresa: proyecto.empresa, _proyectoNombre: proyecto.nombre })}
                     >
                       <div className="gc-label">
                         {/* Fila superior: drag + expand en la misma línea */}
@@ -1666,7 +1957,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                           key={s.id}
                           className="gantt-row"
                           style={{ gridTemplateColumns: cols, background: "#F0F4F8", cursor: "pointer" }}
-                          onClick={e => { e.stopPropagation(); setModalTarea({ ...t, _openSubtarea: s }); }}
+                          onClick={e => { e.stopPropagation(); setModalTarea({ ...t, _openSubtarea: s, _empresa: proyecto.empresa, _proyectoNombre: proyecto.nombre }); }}
                         >
                           <div className="gc-label">
                             <div style={{ fontSize: 10, fontWeight: 600, color: "var(--mid)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>↳ {s.descripcion}</div>
@@ -1703,7 +1994,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
               const s = STATUS_TAREA[t.status] || { label: t.status, color: "b-gray" };
               const esAtrasada = t.fecha_fin && t.fecha_fin < today() && t.porcentaje_avance < 100;
               return (
-                <div key={t.id} className={`tarea-row ${criticas.has(t.id) ? "critica" : esAtrasada ? "atrasada" : ""}`} onClick={() => setModalTarea(t)}>
+                <div key={t.id} className={`tarea-row ${criticas.has(t.id) ? "critica" : esAtrasada ? "atrasada" : ""}`} onClick={() => setModalTarea({ ...t, _empresa: proyecto.empresa, _proyectoNombre: proyecto.nombre })}>
                   <div className="flex-between mb8">
                     <div className="flex-gap">
                       <span className={`badge ${s.color}`}>{s.label}</span>
@@ -1738,7 +2029,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
             : tareas.filter(t => criticas.has(t.id)).map(t => {
                 const esAtrasada = t.fecha_fin && t.fecha_fin < today() && t.porcentaje_avance < 100;
                 return (
-                  <div key={t.id} className="tarea-row critica" onClick={() => setModalTarea(t)}>
+                  <div key={t.id} className="tarea-row critica" onClick={() => setModalTarea({ ...t, _empresa: proyecto.empresa, _proyectoNombre: proyecto.nombre })}>
                     <div className="flex-between mb8">
                       <div className="flex-gap">
                         <span className="badge b-red">Camino crítico</span>
@@ -1779,6 +2070,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
           onClose={() => setModalTarea(null)}
           onSave={() => { setModalTarea(null); notify("Tarea guardada", "success"); load(); }}
           onEliminar={handleEliminarTarea}
+          notify={notify}
         />
       )}
       {editProyecto && (
