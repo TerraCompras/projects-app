@@ -1661,6 +1661,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
   const [loading, setLoading]         = useState(true);
   const [loadError, setLoadError]     = useState(null);
   const [tab, setTab]                 = useState("gantt");
+  const [modalMail, setModalMail]     = useState(false);
   const [modalTarea, setModalTarea]   = useState(null);
   const [editProyecto, setEditProyecto] = useState(false);
   const [fullscreen, setFullscreen]   = useState(null); // "gantt" | "detalle" | null
@@ -1916,12 +1917,20 @@ function PageDetalle({ proyectoId, onBack, notify }) {
           <div key={t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</div>
         ))}
         {tab === "gantt" && (
-          <button
-            className="btn btn-ghost btn-sm"
-            onClick={() => setFullscreen("gantt")}
-            style={{ marginLeft: "auto", marginBottom: 2 }}
-            title="Ver Gantt en pantalla completa"
-          >🔲 Ampliar Gantt</button>
+          <div style={{display:"flex",gap:8,marginLeft:"auto"}}>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => setModalMail(true)}
+              style={{ marginBottom: 2 }}
+              title="Generar listado para mail"
+            >📧 Generar mail</button>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => setFullscreen("gantt")}
+              style={{ marginBottom: 2 }}
+              title="Ver Gantt en pantalla completa"
+            >🔲 Ampliar Gantt</button>
+          </div>
         )}
       </div>
 
@@ -2088,6 +2097,44 @@ function PageDetalle({ proyectoId, onBack, notify }) {
           <AdjuntosPanel proyectoId={proyectoId} notify={notify} />
         </div>
       )}
+
+      {modalMail && (() => {
+        const fmtFecha = (d) => d ? new Date(d+'T00:00:00').toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—'
+        const lineas = []
+        tareasOrdenadas.forEach(t => {
+          const resp = t.responsable || 'Sin asignar'
+          const fi = fmtFecha(t.fecha_inicio)
+          const ff = fmtFecha(t.fecha_fin)
+          lineas.push(`• ${t.nombre} [${fi} - ${ff}] ${resp}`)
+          ;(t.subtareas||[]).forEach(s => {
+            const sr = s.responsable || resp
+            const sfi = fmtFecha(s.fecha_inicio)
+            const sff = fmtFecha(s.fecha_fin)
+            lineas.push(`   ◦ ${s.nombre} [${sfi} - ${sff}] ${sr}`)
+          })
+        })
+        const texto = lineas.join('\n')
+        return (
+          <div style={{position:'fixed',inset:0,background:'rgba(11,22,41,.55)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}}
+            onClick={e=>e.target===e.currentTarget&&setModalMail(false)}>
+            <div style={{background:'#fff',borderRadius:12,padding:28,width:680,maxWidth:'95vw',maxHeight:'90vh',display:'flex',flexDirection:'column',gap:16,boxShadow:'0 20px 60px rgba(11,22,41,.2)'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <h3 style={{margin:0,fontSize:15,fontWeight:800,color:'#0B1629'}}>📧 Listado de tareas para mail</h3>
+                <button onClick={()=>setModalMail(false)} style={{background:'none',border:'none',fontSize:20,cursor:'pointer',color:'#6381A7'}}>✕</button>
+              </div>
+              <textarea
+                readOnly
+                value={texto}
+                style={{flex:1,minHeight:360,fontFamily:'monospace',fontSize:12,border:'1px solid #D6E0ED',borderRadius:8,padding:12,resize:'vertical',background:'#F8FAFC',lineHeight:1.7}}
+              />
+              <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+                <button onClick={()=>setModalMail(false)} style={{background:'transparent',color:'#6381A7',border:'1px solid #D6E0ED',padding:'7px 14px',borderRadius:6,fontSize:12,fontWeight:600,cursor:'pointer'}}>Cerrar</button>
+                <button onClick={()=>{navigator.clipboard.writeText(texto);alert('¡Copiado al portapapeles!')}} style={{background:'#235C96',color:'#fff',border:'none',padding:'7px 14px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}}>📋 Copiar</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {tab === "adjuntos_tareas" && (
         <AdjuntosTareasTab proyectoId={proyectoId} tareas={tareas} notify={notify} />
