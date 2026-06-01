@@ -30,8 +30,8 @@ const CSS = `
   --warn:#B07D0A;--danger:#C0392B;--teal:#1A7A6E;
   --sans:'Montserrat',sans-serif;--mono:'DM Mono',monospace;--r:6px;--r2:10px;
 }
-body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5;min-height:100vh}
-.app{display:flex;min-height:100vh}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.5;min-height:100vh;overflow-x:hidden}
+.app{display:flex;min-height:100vh;overflow-x:hidden}
 
 /* ── SIDEBAR ── */
 .sidebar{width:235px;min-width:235px;background:var(--navy);display:flex;flex-direction:column;box-shadow:2px 0 8px rgba(33,51,99,.15);transition:transform .25s}
@@ -52,7 +52,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 .main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
 .topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:13px 28px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 1px 3px rgba(33,51,99,.06);gap:12px}
 .topbar-title{font-size:12px;font-weight:600;letter-spacing:1px;color:var(--navy);text-transform:uppercase;white-space:nowrap}
-.content{flex:1;overflow-y:auto;padding:24px 28px;background:var(--bg)}
+.content{flex:1;overflow-y:auto;overflow-x:hidden;padding:24px 28px;background:var(--bg)}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:20px;margin-bottom:16px;box-shadow:0 1px 4px rgba(33,51,99,.06)}
 .badge{display:inline-flex;align-items:center;font-family:var(--mono);font-size:9px;font-weight:600;padding:3px 8px;border-radius:4px;white-space:nowrap;letter-spacing:.3px}
 .b-blue{background:#DBEAFE;color:#1E40AF;border:1px solid #BFDBFE}
@@ -167,21 +167,45 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
   .sidebar-overlay.open{display:block}
   .hamburger{display:flex}
   .topbar{padding:10px 16px}
-  .content{padding:16px}
+  .content{padding:16px;overflow-x:hidden}
   .stats{grid-template-columns:repeat(2,1fr)}
+  .stat{padding:12px}
+  .stat-value{font-size:22px}
   .form-grid{grid-template-columns:1fr}
   .form-grid-3{grid-template-columns:1fr}
   .gantt-wrap{overflow-x:auto}
   .req-title{font-size:13px}
+  /* Modal DS §10 — bottom sheet */
   .modal{max-width:100%;margin:0;border-radius:12px 12px 0 0;position:fixed;bottom:0;left:0;right:0;max-height:90vh;overflow-y:auto}
   .overlay{align-items:flex-end;padding:0}
-  .flex-between{flex-wrap:wrap}
+  /* Modal footer: columna DS §10 */
+  .mftr{flex-direction:column;align-items:stretch;gap:6px}
+  .mftr .btn{width:100%;justify-content:center;min-height:44px}
+  .mftr .btn-primary{order:-2}
+  .mftr .btn-cotizar{order:-3}
+  .mftr .btn-danger{order:-1}
+  /* Action cards DS §10.2 */
+  .req-row-actions{flex-direction:column;width:100%}
+  .req-row-actions .btn{width:100%;justify-content:center;min-height:44px}
+  /* Form footer */
+  .form-footer-actions{flex-direction:column;align-items:stretch}
+  .form-footer-actions .btn{width:100%;justify-content:center;min-height:44px}
+  /* Headers */
+  .flex-between{flex-wrap:wrap;gap:8px}
+  /* Filters */
   .filter-row{gap:6px}
   .filter-select{min-width:0;flex:1}
+  .filter-row .btn{width:100%;justify-content:center}
+  /* Tap targets DS §11.10 */
+  .btn{min-height:44px}
+  .btn-sm{min-height:36px}
+  .fg input,.fg select{min-height:44px}
+  /* Tabs scroll */
+  .tabs-row{overflow-x:auto;-webkit-overflow-scrolling:touch}
 }
 @media(max-width:480px){
   .stats{grid-template-columns:repeat(2,1fr)}
-  .stat-value{font-size:22px}
+  .stat-value{font-size:20px}
   .btn{padding:6px 10px;font-size:10px}
   .topbar-title{font-size:11px}
 }
@@ -1026,15 +1050,15 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar, no
         </div>
 
         {/* Tabs del modal */}
-        <div style={{ display: "flex", borderBottom: "1px solid var(--border)", background: "var(--surface2)" }}>
+        <div className="tabs-row" style={{ background: "var(--surface2)", marginBottom: 0 }}>
           {[
             { id: "datos", label: "Datos" },
             { id: "subtareas", label: `Subtareas${subtareas.length ? ` (${subtareas.length})` : ""}` },
             { id: "adjuntos", label: "📎 Adjuntos" },
           ].map(t => (
             <div key={t.id}
+              className={`tab ${tabModal === t.id ? "active" : ""}`}
               onClick={() => setTabModal(t.id)}
-              style={{ padding: "9px 16px", fontSize: 11, fontWeight: 600, cursor: "pointer", letterSpacing: .5, textTransform: "uppercase", color: tabModal === t.id ? "var(--blue)" : "var(--muted)", borderBottom: `2px solid ${tabModal === t.id ? "var(--blue)" : "transparent"}`, transition: "all .12s" }}
             >{t.label}</div>
           ))}
         </div>
@@ -1179,7 +1203,7 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar, no
 
         </div>
 
-        <div className="mftr" style={{ justifyContent: "space-between" }}>
+        <div className="mftr" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
           <div>
             {tarea?.id && !confirmEliminar && (
               <button className="btn btn-danger btn-sm" onClick={() => setConfirmEliminar(true)}>✕ Eliminar tarea</button>
@@ -1307,38 +1331,16 @@ function PageProyectos({ onSelectProyecto, notify, filtroEmpresaExterno = "", so
                 <div key={p.id} className={`req-row ${atrasada ? "active-border" : ""}`}
                   onClick={() => { if (confirmId === p.id) { setConfirmId(null); return; } onSelectProyecto(p); }}
                   style={{ position: "relative" }}>
-                  <div className="flex-between mb8">
-                    <div className="flex-gap">
-                      <span className={`badge ${s.color}`}>{s.label}</span>
-                      <span className={`badge ${p.tipo === "externo" ? "b-purple" : "b-teal"}`}>{p.tipo}</span>
-                      {atrasada && <span className="badge b-red">⚠ Atrasado</span>}
-                    </div>
-                    <div className="flex-gap">
-                      <span style={{ fontSize: 10, color: "var(--muted)" }}>{p.empresa}</span>
-                      {/* Botón eliminar */}
-                      {!esConfirm ? (
-                        <button
-                          onClick={e => handleEliminar(e, p.id)}
-                          disabled={eliminandoId === p.id}
-                          title="Eliminar proyecto"
-                          style={{ background: "none", border: "1px solid var(--border)", borderRadius: "var(--r)", color: "var(--muted2)", cursor: "pointer", fontSize: 10, padding: "2px 8px", fontFamily: "var(--sans)", fontWeight: 600, transition: "all .12s" }}
-                          onMouseEnter={e => { e.currentTarget.style.color = "var(--danger)"; e.currentTarget.style.borderColor = "var(--danger)"; }}
-                          onMouseLeave={e => { e.currentTarget.style.color = "var(--muted2)"; e.currentTarget.style.borderColor = "var(--border)"; }}
-                        >
-                          {eliminandoId === p.id ? "..." : "✕"}
-                        </button>
-                      ) : (
-                        <div className="flex-gap" onClick={e => e.stopPropagation()}>
-                          <span style={{ fontSize: 10, color: "var(--danger)", fontWeight: 600 }}>¿Eliminar?</span>
-                          <button className="btn btn-danger btn-sm" onClick={e => handleEliminar(e, p.id)} disabled={eliminandoId === p.id}>
-                            {eliminandoId === p.id ? "..." : "Sí"}
-                          </button>
-                          <button className="btn btn-ghost btn-sm" onClick={e => { e.stopPropagation(); setConfirmId(null); }}>No</button>
-                        </div>
-                      )}
-                    </div>
+                  {/* Nivel 1: Identificadores y estado */}
+                  <div className="flex-gap mb8">
+                    <span className={`badge ${s.color}`}>{s.label}</span>
+                    <span className={`badge ${p.tipo === "externo" ? "b-purple" : "b-teal"}`}>{p.tipo}</span>
+                    {atrasada && <span className="badge b-red">⚠ Atrasado</span>}
+                    <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--muted)" }}>{p.empresa}</span>
                   </div>
+                  {/* Nivel 2: Título */}
                   <div className="req-title">{p.nombre}</div>
+                  {/* Nivel 3: Metadata */}
                   <div className="req-meta">
                     {p.cliente    && <span>👤 {p.cliente}</span>}
                     {p.responsable && <><span>·</span><span>👤 {p.responsable}</span></>}
@@ -1348,6 +1350,26 @@ function PageProyectos({ onSelectProyecto, notify, filtroEmpresaExterno = "", so
                     {(p.proyecto_contactos || []).length > 0 && <><span>·</span><span>📧 {(p.proyecto_contactos || []).map(c => c.nombre).join(", ")}</span></>}
                   </div>
                   {tareas.length > 0 && <div className="mt8"><PctBar pct={pct} /><div style={{ fontSize: 9, color: "var(--muted)", fontFamily: "var(--mono)", marginTop: 3 }}>{pct}% avance global</div></div>}
+                  {/* Nivel 4: Acciones — DS §10.2 */}
+                  <div className="req-row-actions" onClick={e => e.stopPropagation()}>
+                    {!esConfirm ? (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        onClick={e => handleEliminar(e, p.id)}
+                        disabled={eliminandoId === p.id}
+                      >
+                        {eliminandoId === p.id ? "..." : "✕ Eliminar"}
+                      </button>
+                    ) : (
+                      <div className="flex-gap">
+                        <span style={{ fontSize: 11, color: "var(--danger)", fontWeight: 600 }}>¿Eliminar?</span>
+                        <button className="btn btn-danger btn-sm" onClick={e => handleEliminar(e, p.id)} disabled={eliminandoId === p.id}>
+                          {eliminandoId === p.id ? "..." : "Sí"}
+                        </button>
+                        <button className="btn btn-ghost btn-sm" onClick={e => { e.stopPropagation(); setConfirmId(null); }}>No</button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })
@@ -1750,7 +1772,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
 
   return (
     <div>
-      <div className="flex-gap mb12">
+      <div className="flex-gap mb12" style={{ flexWrap: "wrap" }}>
         <button className="btn btn-ghost btn-sm" onClick={onBack}>← Volver</button>
         <button className="btn btn-ghost btn-sm" onClick={() => setEditProyecto(true)}>✏ Editar</button>
         <button className="btn btn-primary btn-sm" onClick={() => setModalTarea({})}>+ Nueva tarea</button>
@@ -2115,22 +2137,21 @@ function PageDetalle({ proyectoId, onBack, notify }) {
         })
         const texto = lineas.join('\n')
         return (
-          <div style={{position:'fixed',inset:0,background:'rgba(11,22,41,.55)',zIndex:300,display:'flex',alignItems:'center',justifyContent:'center'}}
-            onClick={e=>e.target===e.currentTarget&&setModalMail(false)}>
-            <div style={{background:'#fff',borderRadius:12,padding:28,width:680,maxWidth:'95vw',maxHeight:'90vh',display:'flex',flexDirection:'column',gap:16,boxShadow:'0 20px 60px rgba(11,22,41,.2)'}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                <h3 style={{margin:0,fontSize:15,fontWeight:800,color:'#0B1629'}}>📧 Listado de tareas para mail</h3>
-                <button onClick={()=>setModalMail(false)} style={{background:'none',border:'none',fontSize:20,cursor:'pointer',color:'#6381A7'}}>✕</button>
+          <div className="overlay" onClick={e=>e.target===e.currentTarget&&setModalMail(false)}>
+            <div className="modal">
+              <div className="mhdr">
+                <div className="mtitle">📧 Listado de tareas para mail</div>
+                <button className="mclose" onClick={()=>setModalMail(false)}>✕</button>
               </div>
+              <div className="mbody">
               <textarea
                 readOnly
                 value={texto}
-                style={{flex:1,minHeight:360,fontFamily:'monospace',fontSize:12,border:'1px solid #D6E0ED',borderRadius:8,padding:12,resize:'vertical',background:'#F8FAFC',lineHeight:1.7}}
-              />
-              <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-                <button onClick={()=>setModalMail(false)} style={{background:'transparent',color:'#6381A7',border:'1px solid #D6E0ED',padding:'7px 14px',borderRadius:6,fontSize:12,fontWeight:600,cursor:'pointer'}}>Cerrar</button>
-                <button onClick={()=>{navigator.clipboard.writeText(texto);alert('¡Copiado al portapapeles!')}} style={{background:'#235C96',color:'#fff',border:'none',padding:'7px 14px',borderRadius:6,fontSize:12,fontWeight:700,cursor:'pointer'}}>📋 Copiar</button>
-              </div>
+                style={{width:'100%',minHeight:320,fontFamily:'var(--mono)',fontSize:12,border:'1px solid var(--border)',borderRadius:'var(--r)',padding:12,resize:'vertical',background:'var(--surface2)',lineHeight:1.7,outline:'none'}}
+              /></div>
+              <div className="form-footer-actions">
+                <button className="btn btn-ghost" onClick={()=>setModalMail(false)}>Cerrar</button>
+                <button className="btn btn-primary" onClick={()=>{navigator.clipboard.writeText(texto);alert('¡Copiado al portapapeles!')}}>📋 Copiar</button>
             </div>
           </div>
         )
@@ -2384,14 +2405,21 @@ function LoginPage() {
     .login-footer{text-align:center;font-family:'DM Mono',monospace;font-size:9px;color:rgba(255,255,255,0.2);margin-top:20px;letter-spacing:1px}
     .login-back{text-align:center;margin-top:12px;font-size:11px;color:rgba(255,255,255,0.3);cursor:pointer;font-family:'DM Mono',monospace}
     .login-back:hover{color:#B8942A}
+    /* Optical Centering Rule — DS §11.12 */
     @media(max-width:768px){
       .login-split{flex-direction:column}
       .login-left{padding:48px 32px 32px;border-right:none;border-bottom:1px solid rgba(26,122,110,0.2);align-items:center;text-align:center}
       .login-left-integra-img{height:200px;max-width:90vw}
       .login-left-line{margin:16px auto}
       .login-left-sub{max-width:100%}
-      .login-right{width:100%;padding:32px 24px 48px}
-      .login-card{padding:28px 24px}
+      .login-right{width:100%;padding:32px 28px 56px;display:flex;justify-content:center;align-items:flex-start}
+      .login-card{width:min(340px,80vw);max-width:340px;margin:0 auto;padding:32px 28px}
+    }
+    @media(max-width:414px){
+      .login-card{width:min(332px,80vw)}
+    }
+    @media(max-width:390px){
+      .login-card{width:min(312px,80vw);padding:28px 24px}
     }
   `;
 
@@ -2559,7 +2587,7 @@ export default function App() {
   }, []);
 
   if (loading) return (
-    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"#213363" }}>
+    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"var(--navy, #213363)" }}>
       <div style={{ fontFamily:"'DM Mono',monospace", fontSize:10, color:"rgba(255,255,255,0.3)", letterSpacing:3, textTransform:"uppercase" }}>Cargando...</div>
     </div>
   );
