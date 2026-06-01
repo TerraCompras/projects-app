@@ -155,25 +155,55 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 .btn-cotizar{background:transparent;color:#065F46;border-color:#A7F3D0;background:#D1FAE5}.btn-cotizar:hover{background:#A7F3D0}
 .cotizar-badge{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;background:#D1FAE5;color:#065F46;border:1px solid #A7F3D0;white-space:nowrap}
 
-/* ── HAMBURGER (mobile) ── */
-.hamburger{display:none;background:none;border:none;cursor:pointer;padding:4px;flex-direction:column;gap:4px}
-.hamburger span{display:block;width:20px;height:2px;background:var(--navy);border-radius:2px;transition:all .2s}
-.sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:49}
+/* ── HAMBURGER (oculto — no se usa en Projects mobile) ── */
+.hamburger{display:none}
+.sidebar-overlay{display:none}
+
+/* ── MOBILE BOTTOM NAV ── */
+.mobile-nav{display:none}
+@media(max-width:768px){
+  .mobile-nav{
+    display:flex;
+    position:fixed;bottom:0;left:0;right:0;
+    background:var(--navy);
+    border-top:1px solid rgba(255,255,255,.1);
+    z-index:50;height:64px;
+    justify-content:space-around;align-items:center;
+    padding:0 4px;
+    box-shadow:0 -2px 12px rgba(33,51,99,.25);
+  }
+  .mn-item{
+    display:flex;flex-direction:column;align-items:center;gap:3px;
+    cursor:pointer;padding:6px 8px;border-radius:8px;
+    color:rgba(255,255,255,.5);transition:all .15s;flex:1;
+    min-height:44px;justify-content:center;
+    font-family:var(--sans);border:none;background:none;
+  }
+  .mn-item.active{color:#fff;background:rgba(255,255,255,.1)}
+  .mn-item:hover{color:#fff}
+  .mn-icon{font-size:18px;line-height:1}
+  .mn-label{font-size:9px;font-weight:600;letter-spacing:.3px;text-transform:uppercase;font-family:var(--mono)}
+}
+@media(min-width:769px){
+  .mobile-nav{display:none !important}
+}
 
 /* ── RESPONSIVE ── */
 @media(max-width:768px){
-  .sidebar{position:fixed;left:0;top:0;bottom:0;z-index:50;transform:translateX(-100%)}
-  .sidebar.open{transform:translateX(0)}
-  .sidebar-overlay.open{display:block}
-  .hamburger{display:flex}
+  /* Sidebar completamente oculto en mobile */
+  .sidebar{display:none !important}
+  .sidebar-overlay{display:none !important}
+  /* Main ocupa todo el ancho */
+  .app{flex-direction:column}
+  .main{width:100%;padding-bottom:72px}
   .topbar{padding:10px 16px}
-  .content{padding:16px;overflow-x:hidden}
+  .content{padding:14px 14px;overflow-x:hidden}
   .stats{grid-template-columns:repeat(2,1fr)}
   .stat{padding:12px}
   .stat-value{font-size:22px}
   .form-grid{grid-template-columns:1fr}
   .form-grid-3{grid-template-columns:1fr}
-  .gantt-wrap{overflow-x:auto}
+  .gantt-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
   .req-title{font-size:13px}
   /* Modal DS §10 — bottom sheet */
   .modal{max-width:100%;margin:0;border-radius:12px 12px 0 0;position:fixed;bottom:0;left:0;right:0;max-height:90vh;overflow-y:auto}
@@ -202,6 +232,8 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
   .fg input,.fg select{min-height:44px}
   /* Tabs scroll */
   .tabs-row{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  /* Notif encima del bottom nav */
+  .notif{bottom:76px}
 }
 @media(max-width:480px){
   .stats{grid-template-columns:repeat(2,1fr)}
@@ -2477,7 +2509,6 @@ function ProjectsApp() {
   const [proyectoSeleccionado, setProyecto]     = useState(null);
   const [notif, setNotif]                       = useState(null);
   const [filtroSidebar, setFiltroSidebar]       = useState("");
-  const [sidebarOpen, setSidebarOpen]           = useState(false);
 
   const notify = useCallback((text, type = "info") => {
     setNotif({ text, type });
@@ -2491,20 +2522,22 @@ function ProjectsApp() {
   };
 
   const NI = ({ id, icon, label }) => (
-    <div className={`ni ${page === id ? "active" : ""}`} onClick={() => { setPage(id); setSidebarOpen(false); }}>
+    <div className={`ni ${page === id ? "active" : ""}`} onClick={() => setPage(id)}>
       <span className="ni-icon">{icon}</span>
       <span>{label}</span>
     </div>
   );
 
+  const navTo = (id) => { setPage(id); };
+  const navEmpresa = (e) => { setFiltroSidebar(filtroSidebar === e ? "" : e); setPage("proyectos"); };
+
   return (
     <>
       <style>{CSS}</style>
       <div className="app">
-        {/* Overlay mobile */}
-        <div className={`sidebar-overlay ${sidebarOpen ? "open" : ""}`} onClick={() => setSidebarOpen(false)} />
 
-        <nav className={`sidebar ${sidebarOpen ? "open" : ""}`}>
+        {/* ── SIDEBAR (solo desktop) ── */}
+        <nav className="sidebar">
           <div className="sidebar-header">
             <div className="sidebar-logo-wrap">
               <img src="/PL.png" alt="Parana Logística" className="sidebar-logo-img" onError={e => { e.currentTarget.style.display = "none"; }} />
@@ -2521,7 +2554,7 @@ function ProjectsApp() {
           {EMPRESAS.map(e => (
             <div key={e}
               className={`ni ${filtroSidebar === e ? "active" : ""}`}
-              onClick={() => { setFiltroSidebar(filtroSidebar === e ? "" : e); setPage("proyectos"); setSidebarOpen(false); }}>
+              onClick={() => navEmpresa(e)}>
               <span className="ni-icon">·</span>
               <span style={{ fontSize: 11 }}>{e}</span>
             </div>
@@ -2535,12 +2568,9 @@ function ProjectsApp() {
           </div>
         </nav>
 
+        {/* ── MAIN ── */}
         <div className="main">
           <div className="topbar">
-            {/* Hamburger mobile */}
-            <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label="Menú">
-              <span /><span /><span />
-            </button>
             <div className="topbar-title">{pageTitles[page] || page}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#DBEAFE", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "var(--blue)", fontWeight: 700 }}>G</div>
@@ -2566,6 +2596,29 @@ function ProjectsApp() {
           </div>
         </div>
       </div>
+
+      {/* ── MOBILE BOTTOM NAV ── */}
+      <nav className="mobile-nav">
+        <button className={`mn-item ${page === "proyectos" ? "active" : ""}`} onClick={() => navTo("proyectos")}>
+          <span className="mn-icon">▦</span>
+          <span className="mn-label">Proyectos</span>
+        </button>
+        <button className={`mn-item ${page === "atrasados" ? "active" : ""}`} onClick={() => navTo("atrasados")}>
+          <span className="mn-icon">⚠</span>
+          <span className="mn-label">Atrasados</span>
+        </button>
+        {page === "detalle" && (
+          <button className={`mn-item active`} onClick={() => {}}>
+            <span className="mn-icon">📋</span>
+            <span className="mn-label">Detalle</span>
+          </button>
+        )}
+        <button className="mn-item" onClick={() => window.location.href = PORTAL_URL}>
+          <span className="mn-icon">←</span>
+          <span className="mn-label">Portal</span>
+        </button>
+      </nav>
+
       <Notif msg={notif} onClose={() => setNotif(null)} />
     </>
   );
