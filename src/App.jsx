@@ -2144,14 +2144,16 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                 <button className="mclose" onClick={()=>setModalMail(false)}>✕</button>
               </div>
               <div className="mbody">
-              <textarea
-                readOnly
-                value={texto}
-                style={{width:'100%',minHeight:320,fontFamily:'var(--mono)',fontSize:12,border:'1px solid var(--border)',borderRadius:'var(--r)',padding:12,resize:'vertical',background:'var(--surface2)',lineHeight:1.7,outline:'none'}}
-              /></div>
-              <div className="form-footer-actions">
+                <textarea
+                  readOnly
+                  value={texto}
+                  style={{width:'100%',minHeight:320,fontFamily:'var(--mono)',fontSize:12,border:'1px solid var(--border)',borderRadius:'var(--r)',padding:12,resize:'vertical',background:'var(--surface2)',lineHeight:1.7,outline:'none'}}
+                />
+              </div>
+              <div className="mftr">
                 <button className="btn btn-ghost" onClick={()=>setModalMail(false)}>Cerrar</button>
                 <button className="btn btn-primary" onClick={()=>{navigator.clipboard.writeText(texto);alert('¡Copiado al portapapeles!')}}>📋 Copiar</button>
+              </div>
             </div>
           </div>
         )
