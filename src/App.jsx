@@ -155,6 +155,25 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 .btn-cotizar{background:transparent;color:#065F46;border-color:#A7F3D0;background:#D1FAE5}.btn-cotizar:hover{background:#A7F3D0}
 .cotizar-badge{display:inline-flex;align-items:center;gap:4px;font-family:var(--mono);font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px;background:#D1FAE5;color:#065F46;border:1px solid #A7F3D0;white-space:nowrap}
 
+/* ── RESPONSABLE POPOVER ── */
+.resp-cell{position:relative;cursor:pointer}
+.resp-cell-name{display:inline-flex;align-items:center;gap:5px;font-weight:600;color:var(--navy);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-bottom:1px dashed var(--border2);padding-bottom:1px;transition:color .12s;max-width:150px}
+.resp-cell:hover .resp-cell-name{color:var(--blue)}
+.resp-popover{position:fixed;z-index:400;background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);box-shadow:0 8px 28px rgba(33,51,99,.18);min-width:320px;max-width:460px;animation:slideUp .15s;pointer-events:none}
+.resp-popover-hdr{background:var(--navy);color:#fff;padding:10px 14px;border-radius:var(--r2) var(--r2) 0 0;display:flex;align-items:center;gap:8px}
+.resp-popover-hdr-name{font-size:12px;font-weight:700;letter-spacing:.3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.resp-popover-body{padding:12px 14px;max-height:380px;overflow-y:auto}
+.resp-pop-section{font-size:9px;font-weight:700;letter-spacing:1.5px;color:var(--blue);text-transform:uppercase;margin:12px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--border)}
+.resp-pop-section:first-child{margin-top:0}
+.resp-pop-row{display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)}
+.resp-pop-row:last-child{border-bottom:none}
+.resp-pop-sub-row{display:flex;align-items:flex-start;gap:8px;padding:4px 0 4px 14px;border-bottom:1px dashed var(--border)}
+.resp-pop-sub-row:last-child{border-bottom:none}
+.resp-pop-name{flex:1;font-weight:600;color:var(--navy);font-size:11px;line-height:1.35}
+.resp-pop-sub-name{flex:1;font-weight:500;color:var(--mid);font-size:10px;line-height:1.35}
+.resp-pop-badge{flex-shrink:0}
+.resp-pop-empty{font-size:11px;color:var(--muted2);padding:6px 0}
+
 /* ── HAMBURGER (oculto — no se usa en Projects mobile) ── */
 .hamburger{display:none}
 .sidebar-overlay{display:none}
@@ -1276,6 +1295,127 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar, no
   );
 }
 
+// ─── RESPONSABLE POPOVER ─────────────────────────────────────────────────────
+// Muestra un popover al hacer hover sobre el nombre del responsable en la tabla.
+// tareasMadre: tareas cuyo responsable === resp (solo las propias del responsable)
+// subtareasDelResp: subtareas cuyo responsable propio === resp (de cualquier tarea)
+function ResponsablePopover({ resp, tareas, subsPorResponsable, today }) {
+  const [pos, setPos]     = useState(null);  // { top, left }
+  const [visible, setVisible] = useState(false);
+  const timerRef = useRef(null);
+
+  const handleMouseEnter = (e) => {
+    clearTimeout(timerRef.current);
+    const rect = e.currentTarget.getBoundingClientRect();
+    // Posicionar a la derecha del nombre; si no cabe, a la izquierda
+    const winW  = window.innerWidth;
+    const popW  = 360;
+    const left  = rect.right + 8 + popW > winW ? rect.left - popW - 8 : rect.right + 8;
+    const top   = Math.min(rect.top, window.innerHeight - 420);
+    setPos({ top, left });
+    setVisible(true);
+  };
+  const handleMouseLeave = () => {
+    timerRef.current = setTimeout(() => setVisible(false), 120);
+  };
+
+  // Tareas donde este responsable es el responsable de la tarea
+  const misTareas = tareas.filter(t => (t.responsable || "Sin asignar") === resp);
+  // Subtareas donde este responsable es el responsable propio de la subtarea
+  const misSubtareas = [];
+  tareas.forEach(t => {
+    (t.subtareas || []).forEach(s => {
+      const r = s.responsable || t.responsable || "Sin asignar";
+      if (r === resp) misSubtareas.push({ sub: s, tareaMadre: t });
+    });
+  });
+
+  const badgeStatus = (t) => {
+    const s = STATUS_TAREA[t.status] || { label: t.status || "—", color: "b-gray" };
+    const esAtrasada = t.fecha_fin && t.fecha_fin < today() && (t.porcentaje_avance || 0) < 100;
+    if (esAtrasada) return <span className="badge b-amber" style={{ fontSize: 8 }}>⚠ Atrasada</span>;
+    return <span className={`badge ${s.color}`} style={{ fontSize: 8 }}>{s.label}</span>;
+  };
+
+  const badgeSub = (s) => {
+    const pct = s.porcentaje_avance || 0;
+    const esAtrasada = s.fecha_fin && s.fecha_fin < today() && pct < 100;
+    if (pct >= 100)   return <span className="badge b-green" style={{ fontSize: 8 }}>✓ Completa</span>;
+    if (esAtrasada)   return <span className="badge b-amber" style={{ fontSize: 8 }}>⚠ Atrasada</span>;
+    if (pct > 0)      return <span className="badge b-blue"  style={{ fontSize: 8 }}>{pct}%</span>;
+    return               <span className="badge b-gray"  style={{ fontSize: 8 }}>Pendiente</span>;
+  };
+
+  return (
+    <>
+      <td
+        className="resp-cell"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        style={{ padding: "7px 12px", background: "inherit" }}
+      >
+        <span className="resp-cell-name" title={resp}>
+          👤 {resp}
+        </span>
+      </td>
+      {visible && pos && (
+        <div
+          className="resp-popover"
+          style={{ top: pos.top, left: pos.left, pointerEvents: "auto" }}
+          onMouseEnter={() => { clearTimeout(timerRef.current); setVisible(true); }}
+          onMouseLeave={handleMouseLeave}
+        >
+          <div className="resp-popover-hdr">
+            <span style={{ fontSize: 16 }}>👤</span>
+            <div className="resp-popover-hdr-name">{resp}</div>
+            <div style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: 9, opacity: .6 }}>
+              {misTareas.length} tarea{misTareas.length !== 1 ? "s" : ""} · {misSubtareas.length} subtarea{misSubtareas.length !== 1 ? "s" : ""}
+            </div>
+          </div>
+          <div className="resp-popover-body">
+
+            {/* ── Tareas ── */}
+            {misTareas.length > 0 && (
+              <>
+                <div className="resp-pop-section">Tareas asignadas</div>
+                {misTareas.map(t => (
+                  <div key={t.id} className="resp-pop-row">
+                    <div className="resp-pop-name">{t.nombre}</div>
+                    <div className="resp-pop-badge">{badgeStatus(t)}</div>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {/* ── Subtareas ── */}
+            {misSubtareas.length > 0 && (
+              <>
+                <div className="resp-pop-section">Subtareas asignadas</div>
+                {misSubtareas.map(({ sub, tareaMadre }, i) => (
+                  <React.Fragment key={sub.id || i}>
+                    {/* Nombre de la tarea madre como contexto */}
+                    <div style={{ fontSize: 9, color: "var(--muted2)", padding: "6px 0 2px", fontFamily: "var(--mono)", letterSpacing: .3 }}>
+                      ↳ {tareaMadre.nombre}
+                    </div>
+                    <div className="resp-pop-sub-row">
+                      <div className="resp-pop-sub-name">{sub.descripcion || sub.nombre || "—"}</div>
+                      <div className="resp-pop-badge">{badgeSub(sub)}</div>
+                    </div>
+                  </React.Fragment>
+                ))}
+              </>
+            )}
+
+            {misTareas.length === 0 && misSubtareas.length === 0 && (
+              <div className="resp-pop-empty">Sin tareas ni subtareas asignadas</div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ─── PAGE PROYECTOS ───────────────────────────────────────────────────────────
 function PageProyectos({ onSelectProyecto, notify, filtroEmpresaExterno = "", soloAtrasados = false }) {
   const [proyectos, setProyectos]   = useState([]);
@@ -1949,10 +2089,8 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                             </td>
                           );
                           return (
-                            <tr key={resp}>
-                              <td style={{ padding: "7px 12px", fontWeight: 600, color: "var(--navy)", fontSize: 11, background: rowBg, maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={resp}>
-                                👤 {resp}
-                              </td>
+                            <tr key={resp} style={{ background: rowBg }}>
+                              <ResponsablePopover resp={resp} tareas={tareas} today={today} />
                               {cell(tareaTotal, "var(--navy)")}
                               {cell(s.en_curso, "var(--blue)")}
                               {cell(s.completadas, "var(--accent2)")}
@@ -2363,8 +2501,8 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                         const bg = idx % 2 === 0 ? "#fff" : "var(--surface2)";
                         const cell = (val, color) => <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: val > 0 ? 700 : 400, color: val > 0 ? color : "var(--muted2)", background: bg }}>{val > 0 ? val : "—"}</td>;
                         return (
-                          <tr key={resp}>
-                            <td style={{ padding: "7px 12px", fontWeight: 600, color: "var(--navy)", fontSize: 11, background: bg, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={resp}>👤 {resp}</td>
+                          <tr key={resp} style={{ background: bg }}>
+                            <ResponsablePopover resp={resp} tareas={tareas} today={today} />
                             {cell(s.total, "var(--navy)")}
                             {cell(s.en_curso, "var(--blue)")}
                             {cell(s.completadas, "var(--accent2)")}
