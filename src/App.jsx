@@ -68,7 +68,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 .btn-ghost{background:transparent;color:var(--muted);border-color:var(--border)}.btn-ghost:hover{color:var(--text);background:var(--surface2)}
 .btn-sm{padding:4px 10px;font-size:10px}
 .btn:disabled{opacity:.4;cursor:not-allowed}
-.overlay{position:fixed;inset:0;background:rgba(33,51,99,.5);display:flex;align-items:flex-start;justify-content:center;z-index:100;padding:20px;overflow-y:auto;animation:fadeIn .15s}
+.overlay{position:fixed;inset:0;background:rgba(33,51,99,.5);display:flex;align-items:flex-start;justify-content:center;z-index:300;padding:20px;overflow-y:auto;animation:fadeIn .15s}
 .modal{background:var(--surface);border:1px solid var(--border);border-radius:12px;width:100%;max-width:760px;margin:auto;animation:slideUp .2s;box-shadow:0 8px 32px rgba(33,51,99,.18)}
 .mhdr{display:flex;justify-content:space-between;align-items:flex-start;padding:18px 22px;border-bottom:1px solid var(--border);background:var(--surface2);border-radius:12px 12px 0 0}
 .mtitle{font-size:13px;font-weight:700;letter-spacing:.5px;color:var(--navy)}
@@ -1864,6 +1864,27 @@ function PageDetalle({ proyectoId, onBack, notify }) {
           else                                        porResponsable[r].pendientes++;
         });
 
+        // Agrupar SUBTAREAS por su propio responsable (no el de la tarea madre)
+        const subsPorResponsable = {};
+        tareas.forEach(t => {
+          (t.subtareas || []).forEach(s => {
+            // Si la subtarea no tiene responsable propio, hereda el de la tarea madre
+            const r = s.responsable || t.responsable || "Sin asignar";
+            if (!subsPorResponsable[r]) subsPorResponsable[r] = { total: 0, en_curso: 0, completadas: 0, atrasadas: 0 };
+            subsPorResponsable[r].total++;
+            const esAtrasadaSub = s.fecha_fin && s.fecha_fin < today() && (s.porcentaje_avance || 0) < 100;
+            if ((s.porcentaje_avance || 0) >= 100)   subsPorResponsable[r].completadas++;
+            else if (esAtrasadaSub)                   subsPorResponsable[r].atrasadas++;
+            else if ((s.porcentaje_avance || 0) > 0) subsPorResponsable[r].en_curso++;
+          });
+        });
+
+        // Unión de responsables (pueden aparecer solo en subtareas)
+        const todosResponsables = Array.from(new Set([
+          ...Object.keys(porResponsable),
+          ...Object.keys(subsPorResponsable),
+        ])).sort((a, b) => a === "Sin asignar" ? 1 : b === "Sin asignar" ? -1 : a.localeCompare(b));
+
         return (
           <>
             {/* Fila 1: stats principales */}
@@ -1900,7 +1921,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                 <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", background: "var(--surface2)" }}>
                   <div className="stat-label">Tareas y subtareas por responsable de ejecución</div>
                 </div>
-                {Object.keys(porResponsable).length === 0
+                {todosResponsables.length === 0
                   ? <div style={{ fontSize: 11, color: "var(--muted2)", padding: 14 }}>Sin responsables asignados</div>
                   : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
                       <thead>
@@ -1917,17 +1938,9 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {Object.entries(porResponsable).map(([resp, s], idx) => {
-                          // Calcular subtareas para este responsable
-                          const misSubs = tareas
-                            .filter(t => (t.responsable || "Sin asignar") === resp)
-                            .flatMap(t => t.subtareas || []);
-                          const sSubs = {
-                            total:      misSubs.length,
-                            en_curso:   misSubs.filter(s => (s.porcentaje_avance||0) > 0 && (s.porcentaje_avance||0) < 100).length,
-                            completadas:misSubs.filter(s => (s.porcentaje_avance||0) >= 100).length,
-                            atrasadas:  misSubs.filter(s => s.fecha_fin && s.fecha_fin < today() && (s.porcentaje_avance||0) < 100).length,
-                          };
+                        {todosResponsables.map((resp, idx) => {
+                          const s     = porResponsable[resp]     || { pendientes: 0, en_curso: 0, completadas: 0, atrasadas: 0 };
+                          const sSubs = subsPorResponsable[resp] || { total: 0, en_curso: 0, completadas: 0, atrasadas: 0 };
                           const tareaTotal = s.pendientes + s.en_curso + s.completadas + s.atrasadas;
                           const rowBg = idx % 2 === 0 ? "#fff" : "var(--surface2)";
                           const cell = (val, color) => (
@@ -2228,7 +2241,12 @@ function PageDetalle({ proyectoId, onBack, notify }) {
               : tareas.map(t => {
                   const barStyle = getBarStyle(t);
                   return (
-                    <div key={t.id} className="gantt-row" style={{ gridTemplateColumns: cols }}>
+                    <div
+                      key={t.id}
+                      className="gantt-row"
+                      style={{ gridTemplateColumns: cols, cursor: "pointer" }}
+                      onClick={() => setModalTarea({ ...t, _empresa: proyecto.empresa, _proyectoNombre: proyecto.nombre })}
+                    >
                       <div className="gc-label">
                         <div className="gc-name">{t.nombre}{criticas.has(t.id) && <span className="cc-badge">CC</span>}</div>
                         <div className="gc-sub">{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
@@ -2285,22 +2303,32 @@ function PageDetalle({ proyectoId, onBack, notify }) {
           {/* Stats fila 2: subtareas */}
           {(() => {
             const todasSubs = tareas.flatMap(t => t.subtareas || []);
-            // Calcular por responsable para la tabla
+            // Calcular tareas por responsable
             const porResp = {};
             tareas.forEach(t => {
               const r = t.responsable || "Sin asignar";
-              if (!porResp[r]) porResp[r] = { total: 0, en_curso: 0, completadas: 0, atrasadas: 0, subTotal: 0, subEnCurso: 0, subCompletadas: 0, subAtrasadas: 0 };
+              if (!porResp[r]) porResp[r] = { total: 0, en_curso: 0, completadas: 0, atrasadas: 0 };
               const esAtrasada = t.fecha_fin && t.fecha_fin < today() && (t.porcentaje_avance||0) < 100;
               porResp[r].total++;
               if ((t.porcentaje_avance||0) >= 100) porResp[r].completadas++;
               else if (esAtrasada) porResp[r].atrasadas++;
               else if ((t.porcentaje_avance||0) > 0) porResp[r].en_curso++;
-              const misSubs = (t.subtareas || []);
-              porResp[r].subTotal += misSubs.length;
-              porResp[r].subEnCurso += misSubs.filter(s => (s.porcentaje_avance||0) > 0 && (s.porcentaje_avance||0) < 100).length;
-              porResp[r].subCompletadas += misSubs.filter(s => (s.porcentaje_avance||0) >= 100).length;
-              porResp[r].subAtrasadas += misSubs.filter(s => s.fecha_fin && s.fecha_fin < today() && (s.porcentaje_avance||0) < 100).length;
             });
+            // Calcular SUBTAREAS por responsable propio de la subtarea
+            const subsPorResp = {};
+            tareas.forEach(t => {
+              (t.subtareas || []).forEach(s => {
+                const r = s.responsable || t.responsable || "Sin asignar";
+                if (!subsPorResp[r]) subsPorResp[r] = { subTotal: 0, subEnCurso: 0, subCompletadas: 0, subAtrasadas: 0 };
+                subsPorResp[r].subTotal++;
+                const esAtrasadaSub = s.fecha_fin && s.fecha_fin < today() && (s.porcentaje_avance||0) < 100;
+                if ((s.porcentaje_avance||0) >= 100) subsPorResp[r].subCompletadas++;
+                else if (esAtrasadaSub) subsPorResp[r].subAtrasadas++;
+                else if ((s.porcentaje_avance||0) > 0) subsPorResp[r].subEnCurso++;
+              });
+            });
+            const todosResp = Array.from(new Set([...Object.keys(porResp), ...Object.keys(subsPorResp)]))
+              .sort((a, b) => a === "Sin asignar" ? 1 : b === "Sin asignar" ? -1 : a.localeCompare(b));
             return (
               <>
                 <div className="stats mb12">
@@ -2329,7 +2357,9 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {Object.entries(porResp).map(([resp, s], idx) => {
+                      {todosResp.map((resp, idx) => {
+                        const s  = porResp[resp]     || { total: 0, en_curso: 0, completadas: 0, atrasadas: 0 };
+                        const ss = subsPorResp[resp] || { subTotal: 0, subEnCurso: 0, subCompletadas: 0, subAtrasadas: 0 };
                         const bg = idx % 2 === 0 ? "#fff" : "var(--surface2)";
                         const cell = (val, color) => <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: val > 0 ? 700 : 400, color: val > 0 ? color : "var(--muted2)", background: bg }}>{val > 0 ? val : "—"}</td>;
                         return (
@@ -2339,10 +2369,10 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                             {cell(s.en_curso, "var(--blue)")}
                             {cell(s.completadas, "var(--accent2)")}
                             <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: s.atrasadas > 0 ? 700 : 400, color: s.atrasadas > 0 ? "var(--danger)" : "var(--muted2)", background: bg }}>{s.atrasadas > 0 ? `⚠ ${s.atrasadas}` : "—"}</td>
-                            <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: s.subTotal > 0 ? 700 : 400, color: "var(--navy)", background: bg, borderLeft: "2px solid var(--border)" }}>{s.subTotal > 0 ? s.subTotal : "—"}</td>
-                            {cell(s.subEnCurso, "var(--blue)")}
-                            {cell(s.subCompletadas, "var(--accent2)")}
-                            <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: s.subAtrasadas > 0 ? 700 : 400, color: s.subAtrasadas > 0 ? "var(--danger)" : "var(--muted2)", background: bg }}>{s.subAtrasadas > 0 ? `⚠ ${s.subAtrasadas}` : "—"}</td>
+                            <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: ss.subTotal > 0 ? 700 : 400, color: "var(--navy)", background: bg, borderLeft: "2px solid var(--border)" }}>{ss.subTotal > 0 ? ss.subTotal : "—"}</td>
+                            {cell(ss.subEnCurso, "var(--blue)")}
+                            {cell(ss.subCompletadas, "var(--accent2)")}
+                            <td style={{ padding: "7px 8px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: ss.subAtrasadas > 0 ? 700 : 400, color: ss.subAtrasadas > 0 ? "var(--danger)" : "var(--muted2)", background: bg }}>{ss.subAtrasadas > 0 ? `⚠ ${ss.subAtrasadas}` : "—"}</td>
                           </tr>
                         );
                       })}
@@ -2364,7 +2394,12 @@ function PageDetalle({ proyectoId, onBack, notify }) {
               {tareas.map(t => {
                 const barStyle = getBarStyle(t);
                 return (
-                  <div key={t.id} className="gantt-row" style={{ gridTemplateColumns: cols }}>
+                  <div
+                    key={t.id}
+                    className="gantt-row"
+                    style={{ gridTemplateColumns: cols, cursor: "pointer" }}
+                    onClick={() => setModalTarea({ ...t, _empresa: proyecto.empresa, _proyectoNombre: proyecto.nombre })}
+                  >
                     <div className="gc-label">
                       <div className="gc-name">{t.nombre}{criticas.has(t.id) && <span className="cc-badge">CC</span>}</div>
                       <div className="gc-sub">{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
