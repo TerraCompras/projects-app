@@ -845,6 +845,8 @@ function ProyectoModal({ proyecto, onClose, onSave }) {
     } catch (e) { alert("Error: " + (e.message || JSON.stringify(e))); }
     finally { setSaving(false); }
   };
+
+  return (
     <div className="overlay">
       <div className="modal">
         <div className="mhdr">
