@@ -137,6 +137,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 .bar.critical{background:var(--danger)}
 .bar.done{background:var(--accent2)}
 .bar.late{background:var(--warn)}
+/* Barra de extensión real (punteada) — se superpone a la derecha de la barra comprometida */
+.bar-real-ext{position:absolute;height:18px;border-radius:0 3px 3px 0;display:flex;align-items:center;padding:0 5px;font-size:8px;color:#fff;white-space:nowrap;overflow:hidden;font-weight:700;opacity:0.85;
+  background:repeating-linear-gradient(90deg,rgba(255,255,255,0.25) 0px,rgba(255,255,255,0.25) 4px,transparent 4px,transparent 8px),var(--warn);
+  border:1px dashed rgba(255,255,255,0.5);box-sizing:border-box}
+.bar-real-before{position:absolute;height:18px;border-radius:0 3px 3px 0;display:flex;align-items:center;padding:0 5px;font-size:8px;color:#fff;white-space:nowrap;overflow:hidden;font-weight:700;opacity:0.85;
+  background:repeating-linear-gradient(90deg,rgba(255,255,255,0.25) 0px,rgba(255,255,255,0.25) 4px,transparent 4px,transparent 8px),var(--accent2);
+  border:1px dashed rgba(255,255,255,0.5);box-sizing:border-box}
 .cc-badge{display:inline-block;font-size:7px;background:#FEE2E2;color:#991B1B;border:1px solid #FECACA;border-radius:3px;padding:1px 4px;margin-left:4px;font-family:var(--mono);font-weight:700}
 .tarea-row{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:14px 16px;margin-bottom:8px;cursor:pointer;transition:all .15s}
 .tarea-row:hover{border-color:var(--blue)}
@@ -309,7 +316,7 @@ const api = {
     return data || [];
   },
   async agregarRecursoCatalogo(nombre) {
-    const { data, error } = await supabase.from("proyecto_recursos_catalogo").insert([{ nombre, tipo: "otro" }]).select().single();
+    const { data, error } = await supabase.from("proyecto_recursos_catalogo").insert([{ nombre, tipo: "otro" }]).select().maybeSingle();
     if (error) throw error;
     return data;
   },
@@ -343,7 +350,7 @@ const api = {
   },
   async crearProyecto(proy, recursos, contactos) {
     // Insert sin select de relaciones para evitar schema cache
-    const { data, error } = await supabase.from("proyectos").insert([proy]).select("id, nombre, empresa, status, tipo, cliente, responsable, fecha_inicio, fecha_fin, descripcion, created_at").single();
+    const { data, error } = await supabase.from("proyectos").insert([proy]).select("id, nombre, empresa, status, tipo, cliente, responsable, fecha_inicio, fecha_fin, descripcion, created_at").maybeSingle();
     if (error) throw error;
     // FIX A2: error check en recursos y contactos
     if (recursos?.length) {
@@ -409,12 +416,8 @@ const api = {
       "nombre", "owner", "responsable", "proyecto_id",
       "fecha_inicio", "fecha_fin", "duracion_dias", "dependencias",
       "porcentaje_avance", "status", "notas", "dias_habiles",
+      "fecha_real_fin", "razon_desvio",
     ];
-    const sanitized = {};
-    camposPermitidos.forEach(k => { if (tarea[k] !== undefined) sanitized[k] = tarea[k]; });
-    sanitized.duracion_dias = parseInt(sanitized.duracion_dias) || 1;
-    sanitized.porcentaje_avance = parseInt(sanitized.porcentaje_avance) || 0;
-    const { data, error } = await supabase.from("proyecto_tareas").insert([sanitized]).select().single();
     if (error) throw error;
     return data;
   },
@@ -425,12 +428,13 @@ const api = {
       "nombre", "owner", "responsable", "proyecto_id",
       "fecha_inicio", "fecha_fin", "duracion_dias", "dependencias",
       "porcentaje_avance", "status", "notas", "dias_habiles",
+      "fecha_real_fin", "razon_desvio",
     ];
     const sanitized = {};
     camposPermitidos.forEach(k => { if (cambios[k] !== undefined) sanitized[k] = cambios[k]; });
     sanitized.duracion_dias = parseInt(sanitized.duracion_dias) || 1;
     sanitized.porcentaje_avance = parseInt(sanitized.porcentaje_avance) || 0;
-    const { data, error } = await supabase.from("proyecto_tareas").update(sanitized).eq("id", id).select().single();
+    const { data, error } = await supabase.from("proyecto_tareas").update(sanitized).eq("id", id).select().maybeSingle();
     if (error) throw error;
     return data;
   },
@@ -465,7 +469,7 @@ const api = {
       tipo: file.type || ext,
       tamanio: file.size,
     };
-    const { data, error } = await supabase.from("proyecto_adjuntos").insert([adjunto]).select().single();
+    const { data, error } = await supabase.from("proyecto_adjuntos").insert([adjunto]).select().maybeSingle();
     if (error) throw error;
     return data;
   },
@@ -488,7 +492,7 @@ const api = {
       .from("requisiciones")
       .insert([{ ...reqLimpio, status: "pendiente_aprobacion" }])
       .select()
-      .single();
+      .maybeSingle();
     if (error) throw error;
     // FIX C2: error check en insert de items
     if (items?.length) {
@@ -513,12 +517,12 @@ const api = {
     return data || [];
   },
   async crearSubtarea(subtarea) {
-    const { data, error } = await supabase.from("proyecto_subtareas").insert([subtarea]).select().single();
+    const { data, error } = await supabase.from("proyecto_subtareas").insert([subtarea]).select().maybeSingle();
     if (error) throw error;
     return data;
   },
   async actualizarSubtarea(id, cambios) {
-    const { data, error } = await supabase.from("proyecto_subtareas").update(cambios).eq("id", id).select().single();
+    const { data, error } = await supabase.from("proyecto_subtareas").update(cambios).eq("id", id).select().maybeSingle();
     if (error) throw error;
     return data;
   },
@@ -840,7 +844,6 @@ function ProyectoModal({ proyecto, onClose, onSave }) {
       onSave();
     } catch (e) { alert("Error: " + (e.message || JSON.stringify(e))); }
     finally { setSaving(false); }
-  };
 
   return (
     <div className="overlay">
@@ -978,10 +981,13 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar, no
     proyecto_id: proyectoId, nombre: "", owner: "", responsable: "",
     fecha_inicio: "", fecha_fin: "", duracion_dias: 1, dependencias: [],
     porcentaje_avance: 0, status: "pendiente", notas: "", dias_habiles: [...DIAS_DEFAULT],
+    fecha_real_fin: "", razon_desvio: "",
     ...(tarea || {}),
     dias_habiles: parseDias(tarea?.dias_habiles),
     duracion_dias: parseInt(tarea?.duracion_dias) || 1,
     porcentaje_avance: parseInt(tarea?.porcentaje_avance) || 0,
+    fecha_real_fin: tarea?.fecha_real_fin || "",
+    razon_desvio: tarea?.razon_desvio || "",
   });
   const [perfiles, setPerfiles]         = useState([]);
   const [subtareas, setSubtareas]       = useState([]);
@@ -990,7 +996,8 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar, no
   const [confirmEliminar, setConfirmEliminar] = useState(false);
   const [tabModal, setTabModal]         = useState(tarea?._openSubtarea ? "subtareas" : "datos");
   const [editSubtareaId, setEditSubtareaId] = useState(null);
-  const [subForm, setSubForm]           = useState({ descripcion: "", fecha_inicio: "", fecha_fin: "", porcentaje_avance: 0, responsable: "" });
+  const [subForm, setSubForm]           = useState({ descripcion: "", fecha_inicio: "", fecha_fin: "", porcentaje_avance: 0, responsable: "", fecha_real_fin: "", razon_desvio: "" });
+  const [confirmEliminarSubId, setConfirmEliminarSubId] = useState(null);
   const [cotizarOrigen, setCotizarOrigen] = useState(null); // { tipo, nombre, id, proyectoId }
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -1048,7 +1055,7 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar, no
   };
 
   // ── Subtareas ──
-  const blankSubForm = () => ({ descripcion: "", fecha_inicio: form.fecha_inicio || "", fecha_fin: form.fecha_fin || "", porcentaje_avance: 0, responsable: "" });
+  const blankSubForm = () => ({ descripcion: "", fecha_inicio: form.fecha_inicio || "", fecha_fin: form.fecha_fin || "", porcentaje_avance: 0, responsable: "", fecha_real_fin: "", razon_desvio: "" });
 
   const handleGuardarSubtarea = async () => {
     if (!subForm.descripcion.trim()) return alert("La descripción es obligatoria");
@@ -1074,11 +1081,12 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar, no
 
   const handleEditarSubtarea = (s) => {
     setEditSubtareaId(s.id);
-    setSubForm({ descripcion: s.descripcion, fecha_inicio: s.fecha_inicio || "", fecha_fin: s.fecha_fin || "", porcentaje_avance: s.porcentaje_avance || 0, responsable: s.responsable || "" });
+    setSubForm({ descripcion: s.descripcion, fecha_inicio: s.fecha_inicio || "", fecha_fin: s.fecha_fin || "", porcentaje_avance: s.porcentaje_avance || 0, responsable: s.responsable || "", fecha_real_fin: s.fecha_real_fin || "", razon_desvio: s.razon_desvio || "" });
   };
 
   const handleEliminarSubtarea = async (id) => {
-    if (!window.confirm("¿Eliminar esta subtarea?")) return;
+    if (confirmEliminarSubId !== id) { setConfirmEliminarSubId(id); return; }
+    setConfirmEliminarSubId(null);
     try {
       await api.eliminarSubtarea(id);
       setSubtareas(prev => prev.filter(s => s.id !== id));
@@ -1142,6 +1150,16 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar, no
               <FG label="Fecha fin (calculada)"><input value={form.fecha_fin ? fmtDate(form.fecha_fin) : "—"} readOnly style={{ background: "var(--surface2)", color: "var(--muted)", cursor: "not-allowed" }} /></FG>
               <FG label="% Avance"><input type="number" min={0} max={100} value={form.porcentaje_avance} onChange={e => set("porcentaje_avance", parseInt(e.target.value) || 0)} /></FG>
             </div>
+            {/* ── Cierre real y desvío ── */}
+            <div className="form-section">Cierre real y desvío</div>
+            <div className="form-grid">
+              <FG label="Fecha real de finalización" hint="Cuándo se completó efectivamente">
+                <input type="date" value={form.fecha_real_fin || ""} onChange={e => set("fecha_real_fin", e.target.value)} />
+              </FG>
+              <FG label="Razón del desvío (opcional)" hint="Demora, adelanto, o sin desvío">
+                <input value={form.razon_desvio || ""} onChange={e => set("razon_desvio", e.target.value)} placeholder="Ej: Espera de repuestos, clima adverso..." />
+              </FG>
+            </div>
             <div className="form-section">Días hábiles</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
               {DIAS_SEMANA.map((d, i) => (
@@ -1194,6 +1212,12 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar, no
                           {perfiles.map(p => <option key={p.id} value={p.nombre}>{p.nombre}</option>)}
                         </select>
                       </FG>
+                      <FG label="Fecha real de fin" hint="Cuándo se completó">
+                        <input type="date" value={subForm.fecha_real_fin || ""} onChange={e => setSub("fecha_real_fin", e.target.value)} />
+                      </FG>
+                      <FG label="Razón del desvío" hint="Opcional">
+                        <input value={subForm.razon_desvio || ""} onChange={e => setSub("razon_desvio", e.target.value)} placeholder="Ej: Material llegó tarde..." />
+                      </FG>
                     </div>
                     {form.fecha_inicio && form.fecha_fin && (
                       <div style={{ fontSize: 10, color: "var(--muted2)", marginBottom: 8 }}>
@@ -1223,12 +1247,20 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar, no
                                 onClick={() => setCotizarOrigen({ tipo: "subtarea", nombre: s.descripcion, id: s.id, proyectoId, proyectoEmpresa: tarea?._empresa, proyectoNombre: tarea?._proyectoNombre })}
                               >🛒</button>
                               <button className="btn btn-ghost btn-sm" onClick={() => handleEditarSubtarea(s)}>✏</button>
-                              <button
-                                onClick={() => handleEliminarSubtarea(s.id)}
-                                style={{ background: "none", border: "none", color: "var(--muted2)", cursor: "pointer", fontSize: 14 }}
-                                onMouseEnter={e => e.currentTarget.style.color = "var(--danger)"}
-                                onMouseLeave={e => e.currentTarget.style.color = "var(--muted2)"}
-                              >✕</button>
+                              {confirmEliminarSubId === s.id ? (
+                                <span className="flex-gap">
+                                  <span style={{ fontSize: 10, color: "var(--danger)" }}>¿Eliminar?</span>
+                                  <button className="btn btn-danger btn-sm" onClick={() => handleEliminarSubtarea(s.id)}>Sí</button>
+                                  <button className="btn btn-ghost btn-sm" onClick={() => setConfirmEliminarSubId(null)}>No</button>
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => handleEliminarSubtarea(s.id)}
+                                  style={{ background: "none", border: "none", color: "var(--muted2)", cursor: "pointer", fontSize: 14 }}
+                                  onMouseEnter={e => e.currentTarget.style.color = "var(--danger)"}
+                                  onMouseLeave={e => e.currentTarget.style.color = "var(--muted2)"}
+                                >✕</button>
+                              )}
                             </div>
                           </div>
                           <div className="req-meta mt8">
@@ -1413,6 +1445,216 @@ function ResponsablePopover({ resp, tareas, subsPorResponsable, today }) {
         </div>
       )}
     </>
+  );
+}
+
+// ─── REPORTE DE DESVÍOS ───────────────────────────────────────────────────────
+// Muestra tabla por tarea/subtarea con días comprometidos, días reales, desvío,
+// razón, owner y responsable. Aprende de la historia para estimar futuros proyectos.
+function ReporteDesvios({ tareas }) {
+  const [filtro, setFiltro] = useState("todas"); // "todas" | "demora" | "adelanto" | "ok"
+
+  // Calcular días hábiles reales entre dos fechas (usando dias_habiles config de la tarea)
+  const diasReales = (inicio, fin, diasHabiles) => {
+    if (!inicio || !fin) return null;
+    const dh = Array.isArray(diasHabiles) && diasHabiles.length === 7 ? diasHabiles : [...DIAS_DEFAULT];
+    let cur = new Date(inicio + "T00:00:00");
+    const end = new Date(fin + "T00:00:00");
+    let count = 0;
+    while (cur <= end) {
+      const dow = (cur.getDay() + 6) % 7;
+      if (dh[dow]) count++;
+      cur.setDate(cur.getDate() + 1);
+    }
+    return count;
+  };
+
+  // Armar filas: tareas + subtareas aplanadas
+  const filas = [];
+  tareas.forEach(t => {
+    const comprDias = parseInt(t.duracion_dias) || null;
+    const realDias  = t.fecha_real_fin && t.fecha_inicio ? diasReales(t.fecha_inicio, t.fecha_real_fin, t.dias_habiles) : null;
+    const desvio    = comprDias !== null && realDias !== null ? realDias - comprDias : null;
+    filas.push({
+      tipo: "tarea",
+      nombre: t.nombre,
+      owner: t.owner || "—",
+      responsable: t.responsable || "—",
+      fechaComprInicio: t.fecha_inicio,
+      fechaComprFin: t.fecha_fin,
+      fechaRealFin: t.fecha_real_fin || null,
+      comprDias,
+      realDias,
+      desvio,
+      razon: t.razon_desvio || "",
+      pct: t.porcentaje_avance || 0,
+    });
+    (t.subtareas || []).forEach(s => {
+      const sComprDias = s.fecha_inicio && s.fecha_fin ? diasReales(s.fecha_inicio, s.fecha_fin, t.dias_habiles) : null;
+      const sRealDias  = s.fecha_real_fin && s.fecha_inicio ? diasReales(s.fecha_inicio, s.fecha_real_fin, t.dias_habiles) : null;
+      const sDesvio    = sComprDias !== null && sRealDias !== null ? sRealDias - sComprDias : null;
+      filas.push({
+        tipo: "subtarea",
+        nombre: `↳ ${s.descripcion}`,
+        owner: t.owner || "—",
+        responsable: s.responsable || t.responsable || "—",
+        fechaComprInicio: s.fecha_inicio,
+        fechaComprFin: s.fecha_fin,
+        fechaRealFin: s.fecha_real_fin || null,
+        comprDias: sComprDias,
+        realDias: sRealDias,
+        desvio: sDesvio,
+        razon: s.razon_desvio || "",
+        pct: s.porcentaje_avance || 0,
+      });
+    });
+  });
+
+  const filtradas = filas.filter(f => {
+    if (filtro === "demora")   return f.desvio !== null && f.desvio > 0;
+    if (filtro === "adelanto") return f.desvio !== null && f.desvio < 0;
+    if (filtro === "ok")       return f.desvio !== null && f.desvio === 0;
+    return true;
+  });
+
+  // Stats resumen
+  const conDesvio   = filas.filter(f => f.desvio !== null);
+  const totalDemora = conDesvio.filter(f => f.desvio > 0).reduce((a, f) => a + f.desvio, 0);
+  const promDesvio  = conDesvio.length ? (conDesvio.reduce((a, f) => a + (f.desvio || 0), 0) / conDesvio.length).toFixed(1) : "—";
+  const maxDemora   = conDesvio.length ? Math.max(...conDesvio.map(f => f.desvio)) : null;
+  const conRazon    = filas.filter(f => f.razon?.trim()).length;
+
+  const desvioColor = (d) => {
+    if (d === null) return "var(--muted2)";
+    if (d > 0) return "var(--danger)";
+    if (d < 0) return "var(--accent2)";
+    return "var(--muted)";
+  };
+  const desvioLabel = (d) => {
+    if (d === null) return "—";
+    if (d > 0) return `+${d}d ⚠`;
+    if (d < 0) return `${d}d ✓`;
+    return "0d ✓";
+  };
+
+  return (
+    <div>
+      {/* Stats resumen */}
+      <div className="stats mb12">
+        <div className="stat">
+          <div className="stat-label">Tareas con datos reales</div>
+          <div className="stat-value" style={{ color: "var(--blue)" }}>{conDesvio.length}<span style={{ fontSize: 12, color: "var(--muted)" }}>/{filas.length}</span></div>
+        </div>
+        <div className="stat">
+          <div className="stat-label">Desvío promedio</div>
+          <div className="stat-value" style={{ color: promDesvio > 0 ? "var(--danger)" : "var(--accent2)" }}>{promDesvio}<span style={{ fontSize: 12, color: "var(--muted)" }}> días</span></div>
+        </div>
+        <div className="stat">
+          <div className="stat-label">Mayor demora</div>
+          <div className="stat-value" style={{ color: "var(--danger)" }}>{maxDemora !== null && maxDemora > 0 ? `+${maxDemora}d` : "—"}</div>
+        </div>
+        <div className="stat">
+          <div className="stat-label">Razones registradas</div>
+          <div className="stat-value" style={{ color: "var(--muted)" }}>{conRazon}</div>
+        </div>
+      </div>
+
+      {/* Filtros */}
+      <div className="filter-row mb12">
+        {[["todas", "Todas"], ["demora", "⚠ Con demora"], ["adelanto", "✓ Adelantos"], ["ok", "= Sin desvío"]].map(([v, l]) => (
+          <button key={v} className={`btn btn-sm ${filtro === v ? "btn-primary" : "btn-ghost"}`} onClick={() => setFiltro(v)}>{l}</button>
+        ))}
+        <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>{filtradas.length} filas</span>
+      </div>
+
+      {/* Info si faltan datos */}
+      {conDesvio.length === 0 && (
+        <div className="info-box accent mb12" style={{ fontSize: 12 }}>
+          Completá el campo <strong>Fecha real de finalización</strong> en cada tarea/subtarea para ver el análisis de desvíos.
+        </div>
+      )}
+
+      {/* Tabla */}
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+          <thead>
+            <tr style={{ background: "var(--surface2)" }}>
+              {["Tarea / Subtarea", "Owner", "Responsable", "Comprometido", "Inicio → Fin pactada", "Fin real", "Días comp.", "Días reales", "Desvío", "Razón"].map((h, i) => (
+                <th key={i} style={{ padding: "7px 10px", textAlign: "left", fontSize: 9, fontWeight: 700, color: "var(--muted)", letterSpacing: .5, textTransform: "uppercase", borderBottom: "2px solid var(--border)", whiteSpace: "nowrap" }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtradas.length === 0
+              ? <tr><td colSpan={10} style={{ padding: "32px", textAlign: "center", color: "var(--muted2)", fontSize: 12 }}>Sin filas para este filtro</td></tr>
+              : filtradas.map((f, idx) => {
+                  const bg = f.tipo === "subtarea" ? "var(--surface2)" : "#fff";
+                  return (
+                    <tr key={idx} style={{ background: bg, borderBottom: "1px solid var(--border)" }}>
+                      <td style={{ padding: "8px 10px", fontWeight: f.tipo === "tarea" ? 700 : 500, color: f.tipo === "tarea" ? "var(--navy)" : "var(--mid)", fontSize: f.tipo === "subtarea" ? 10 : 11, maxWidth: 200, wordBreak: "break-word" }}>{f.nombre}</td>
+                      <td style={{ padding: "8px 10px", fontFamily: "var(--mono)", fontSize: 10, color: "var(--muted)", whiteSpace: "nowrap" }}>{f.owner}</td>
+                      <td style={{ padding: "8px 10px", fontFamily: "var(--mono)", fontSize: 10, color: "var(--muted)", whiteSpace: "nowrap" }}>{f.responsable}</td>
+                      <td style={{ padding: "8px 10px", fontSize: 10, color: "var(--muted)", whiteSpace: "nowrap" }}>{fmtDate(f.fechaComprFin)}</td>
+                      <td style={{ padding: "8px 10px", fontSize: 10, color: "var(--muted)", whiteSpace: "nowrap" }}>{f.fechaComprInicio ? `${fmtDate(f.fechaComprInicio)} → ${fmtDate(f.fechaComprFin)}` : "—"}</td>
+                      <td style={{ padding: "8px 10px", fontSize: 10, whiteSpace: "nowrap", fontWeight: f.fechaRealFin ? 600 : 400, color: f.fechaRealFin ? "var(--navy)" : "var(--muted2)" }}>{f.fechaRealFin ? fmtDate(f.fechaRealFin) : "—"}</td>
+                      <td style={{ padding: "8px 10px", textAlign: "center", fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>{f.comprDias ?? "—"}</td>
+                      <td style={{ padding: "8px 10px", textAlign: "center", fontFamily: "var(--mono)", fontSize: 11, color: f.realDias !== null ? "var(--navy)" : "var(--muted2)", fontWeight: f.realDias !== null ? 700 : 400 }}>{f.realDias ?? "—"}</td>
+                      <td style={{ padding: "8px 10px", textAlign: "center", fontFamily: "var(--mono)", fontSize: 11, fontWeight: 700, color: desvioColor(f.desvio), whiteSpace: "nowrap" }}>{desvioLabel(f.desvio)}</td>
+                      <td style={{ padding: "8px 10px", fontSize: 10, color: "var(--muted)", maxWidth: 220, wordBreak: "break-word" }}>{f.razon || <span style={{ color: "var(--muted2)", fontStyle: "italic" }}>—</span>}</td>
+                    </tr>
+                  );
+                })
+            }
+          </tbody>
+        </table>
+      </div>
+
+      {/* Resumen por responsable */}
+      {conDesvio.length > 0 && (() => {
+        const porResp = {};
+        filas.filter(f => f.desvio !== null).forEach(f => {
+          const r = f.responsable || "Sin asignar";
+          if (!porResp[r]) porResp[r] = { n: 0, totalDesvio: 0, demoras: 0, adelantos: 0 };
+          porResp[r].n++;
+          porResp[r].totalDesvio += f.desvio;
+          if (f.desvio > 0) porResp[r].demoras++;
+          if (f.desvio < 0) porResp[r].adelantos++;
+        });
+        const rows = Object.entries(porResp).sort((a, b) => b[1].totalDesvio - a[1].totalDesvio);
+        return (
+          <div className="card mt16" style={{ padding: 0, overflow: "hidden" }}>
+            <div style={{ padding: "10px 14px", background: "var(--surface2)", borderBottom: "1px solid var(--border)" }}>
+              <div className="stat-label">Desvío acumulado por responsable</div>
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+              <thead>
+                <tr style={{ background: "var(--surface2)" }}>
+                  {["Responsable", "Tareas evaluadas", "Desvío total (días)", "Con demora", "Con adelanto", "Promedio"].map((h, i) => (
+                    <th key={i} style={{ padding: "6px 12px", textAlign: i > 0 ? "center" : "left", fontSize: 9, fontWeight: 700, color: "var(--muted)", letterSpacing: .5, textTransform: "uppercase", borderBottom: "2px solid var(--border)" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(([resp, s], idx) => {
+                  const prom = (s.totalDesvio / s.n).toFixed(1);
+                  const bg = idx % 2 === 0 ? "#fff" : "var(--surface2)";
+                  return (
+                    <tr key={resp} style={{ background: bg, borderBottom: "1px solid var(--border)" }}>
+                      <td style={{ padding: "8px 12px", fontWeight: 600, color: "var(--navy)" }}>{resp}</td>
+                      <td style={{ padding: "8px 12px", textAlign: "center", fontFamily: "var(--mono)" }}>{s.n}</td>
+                      <td style={{ padding: "8px 12px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: 700, color: s.totalDesvio > 0 ? "var(--danger)" : s.totalDesvio < 0 ? "var(--accent2)" : "var(--muted)" }}>{s.totalDesvio > 0 ? `+${s.totalDesvio}` : s.totalDesvio}</td>
+                      <td style={{ padding: "8px 12px", textAlign: "center", fontFamily: "var(--mono)", color: s.demoras > 0 ? "var(--danger)" : "var(--muted2)", fontWeight: s.demoras > 0 ? 700 : 400 }}>{s.demoras > 0 ? `⚠ ${s.demoras}` : "—"}</td>
+                      <td style={{ padding: "8px 12px", textAlign: "center", fontFamily: "var(--mono)", color: s.adelantos > 0 ? "var(--accent2)" : "var(--muted2)", fontWeight: s.adelantos > 0 ? 700 : 400 }}>{s.adelantos > 0 ? `✓ ${s.adelantos}` : "—"}</td>
+                      <td style={{ padding: "8px 12px", textAlign: "center", fontFamily: "var(--mono)", fontWeight: 700, color: parseFloat(prom) > 0 ? "var(--danger)" : parseFloat(prom) < 0 ? "var(--accent2)" : "var(--muted)" }}>{parseFloat(prom) > 0 ? `+${prom}d` : `${prom}d`}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        );
+      })()}
+    </div>
   );
 }
 
@@ -1914,6 +2156,23 @@ function PageDetalle({ proyectoId, onBack, notify }) {
     return { left: `${left}%`, width: `${width}%` };
   };
 
+  // Barra de extensión real: si fecha_real_fin > fecha_fin → extensión roja punteada
+  // Si fecha_real_fin < fecha_fin → extensión verde punteada (adelanto)
+  const getRealExtStyle = (t) => {
+    if (!t.fecha_real_fin || !t.fecha_fin || !minFecha) return null;
+    const comprLeft  = (diffDays(minFecha, t.fecha_inicio) / totalDias) * 100;
+    const comprRight = comprLeft + Math.max((diffDays(t.fecha_inicio, t.fecha_fin) / totalDias) * 100, 2);
+    const realRight  = comprLeft + Math.max((diffDays(t.fecha_inicio, t.fecha_real_fin) / totalDias) * 100, 2);
+    if (Math.abs(realRight - comprRight) < 0.5) return null; // igual, sin desvío visible
+    if (realRight > comprRight) {
+      // Demora: punteado naranja desde fecha_fin comprometida hasta fecha_real_fin
+      return { type: "late", left: `${comprRight}%`, width: `${realRight - comprRight}%` };
+    } else {
+      // Adelanto: punteado verde desde fecha_real_fin hasta fecha_fin comprometida
+      return { type: "early", left: `${realRight}%`, width: `${comprRight - realRight}%` };
+    }
+  };
+
   const getBarClass = (t) => {
     if (t.porcentaje_avance >= 100) return "done";
     if (criticas.has(t.id))         return "critical";
@@ -2118,7 +2377,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
       })()}
 
       <div className="tabs-row" style={{ alignItems: "center" }}>
-        {[{ id: "gantt", label: "Gantt" }, { id: "lista", label: "Lista de tareas" }, { id: "critico", label: "Camino crítico" }, { id: "adjuntos", label: "📎 Adjuntos" }, { id: "adjuntos_tareas", label: "📋 Adjuntos de tareas" }].map(t => (
+        {[{ id: "gantt", label: "Gantt" }, { id: "lista", label: "Lista de tareas" }, { id: "critico", label: "Camino crítico" }, { id: "desvios", label: "📊 Reporte desvíos" }, { id: "adjuntos", label: "📎 Adjuntos" }, { id: "adjuntos_tareas", label: "📋 Adjuntos de tareas" }].map(t => (
           <div key={t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>{t.label}</div>
         ))}
         {tab === "gantt" && (
@@ -2186,10 +2445,12 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                         <div style={{ fontSize: 9, color: "var(--muted)", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
                       </div>
                       <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}`, background: "#fff" }}>
-                        {barStyle
-                          ? <div className={`bar ${getBarClass(t)}`} style={barStyle}>{t.nombre}</div>
-                          : <div style={{ fontSize: 10, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>
-                        }
+                        {barStyle ? (
+                          <>
+                            <div className={`bar ${getBarClass(t)}`} style={barStyle}>{t.nombre}</div>
+                            {(() => { const ext = getRealExtStyle(t); return ext ? <div className={ext.type === "late" ? "bar-real-ext" : "bar-real-before"} style={{ left: ext.left, width: ext.width }} title={ext.type === "late" ? `Real: ${fmtDate(t.fecha_real_fin)} (demora)` : `Real: ${fmtDate(t.fecha_real_fin)} (adelanto)`}>{ext.type === "late" ? "▶" : "✓"}</div> : null; })()}
+                          </>
+                        ) : <div style={{ fontSize: 10, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>}
                       </div>
                     </div>
                     {/* ── Filas subtareas (solo si expandida) ── */}
@@ -2197,6 +2458,16 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                       const sLeft  = s.fecha_inicio && minFecha ? (diffDays(minFecha, s.fecha_inicio) / totalDias) * 100 : null;
                       const sWidth = s.fecha_inicio && s.fecha_fin ? Math.max((diffDays(s.fecha_inicio, s.fecha_fin) / totalDias) * 100, 1) : null;
                       const sStyle = sLeft !== null && sWidth !== null ? { left: `${sLeft}%`, width: `${sWidth}%` } : null;
+                      // Extensión real subtarea
+                      const sRealExt = (() => {
+                        if (!s.fecha_real_fin || !s.fecha_fin || !minFecha || sLeft === null) return null;
+                        const sComprRight = sLeft + Math.max((diffDays(s.fecha_inicio, s.fecha_fin) / totalDias) * 100, 1);
+                        const sRealRight  = sLeft + Math.max((diffDays(s.fecha_inicio, s.fecha_real_fin) / totalDias) * 100, 1);
+                        if (Math.abs(sRealRight - sComprRight) < 0.5) return null;
+                        return sRealRight > sComprRight
+                          ? { type: "late",  left: `${sComprRight}%`, width: `${sRealRight - sComprRight}%` }
+                          : { type: "early", left: `${sRealRight}%`,  width: `${sComprRight - sRealRight}%` };
+                      })();
                       return (
                         <div
                           key={s.id}
@@ -2209,10 +2480,12 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                             <div style={{ fontSize: 9, color: "var(--muted2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.responsable || "—"} · {s.porcentaje_avance || 0}%</div>
                           </div>
                           <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}` }}>
-                            {sStyle
-                              ? <div style={{ ...sStyle, position: "absolute", height: 10, borderRadius: 3, background: s.porcentaje_avance >= 100 ? "var(--accent2)" : "var(--mid)", opacity: 0.8 }} />
-                              : <div style={{ fontSize: 9, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>
-                            }
+                            {sStyle ? (
+                              <>
+                                <div style={{ ...sStyle, position: "absolute", height: 10, borderRadius: 3, background: s.porcentaje_avance >= 100 ? "var(--accent2)" : "var(--mid)", opacity: 0.8 }} />
+                                {sRealExt && <div className={sRealExt.type === "late" ? "bar-real-ext" : "bar-real-before"} style={{ ...sRealExt, height: 10, top: "50%", transform: "translateY(-50%)" }} title={`Real: ${fmtDate(s.fecha_real_fin)}`} />}
+                              </>
+                            ) : <div style={{ fontSize: 9, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>}
                           </div>
                         </div>
                       );
@@ -2225,6 +2498,8 @@ function PageDetalle({ proyectoId, onBack, notify }) {
             {[["var(--danger)", "Camino crítico"], ["var(--blue)", "En fecha"], ["var(--accent2)", "Completada"], ["var(--warn)", "Atrasada"]].map(([color, label]) => (
               <div key={label} className="flex-gap"><div style={{ width: 10, height: 10, borderRadius: 2, background: color }} /><span style={{ fontSize: 9, color: "var(--muted)" }}>{label}</span></div>
             ))}
+            <div className="flex-gap"><div style={{ width: 18, height: 10, borderRadius: 2, background: "repeating-linear-gradient(90deg,rgba(176,125,10,0.7) 0px,rgba(176,125,10,0.7) 4px,transparent 4px,transparent 8px)", border: "1px dashed var(--warn)" }} /><span style={{ fontSize: 9, color: "var(--muted)" }}>Demora real</span></div>
+            <div className="flex-gap"><div style={{ width: 18, height: 10, borderRadius: 2, background: "repeating-linear-gradient(90deg,rgba(30,126,74,0.7) 0px,rgba(30,126,74,0.7) 4px,transparent 4px,transparent 8px)", border: "1px dashed var(--accent2)" }} /><span style={{ fontSize: 9, color: "var(--muted)" }}>Adelanto real</span></div>
             {tareasOrden && (
               <button className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={() => setTareasOrden(null)}>↺ Restablecer orden</button>
             )}
@@ -2301,6 +2576,10 @@ function PageDetalle({ proyectoId, onBack, notify }) {
           <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", letterSpacing: 1, textTransform: "uppercase", marginBottom: 14 }}>Adjuntos del proyecto</div>
           <AdjuntosPanel proyectoId={proyectoId} notify={notify} />
         </div>
+      )}
+
+      {tab === "desvios" && (
+        <ReporteDesvios tareas={tareas} />
       )}
 
       {modalMail && (() => {
@@ -2390,10 +2669,12 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                         <div className="gc-sub">{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
                       </div>
                       <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}`, background: "#fff" }}>
-                        {barStyle
-                          ? <div className={`bar ${getBarClass(t)}`} style={barStyle}>{t.nombre}</div>
-                          : <div style={{ fontSize: 10, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>
-                        }
+                        {barStyle ? (
+                          <>
+                            <div className={`bar ${getBarClass(t)}`} style={barStyle}>{t.nombre}</div>
+                            {(() => { const ext = getRealExtStyle(t); return ext ? <div className={ext.type === "late" ? "bar-real-ext" : "bar-real-before"} style={{ left: ext.left, width: ext.width }} title={`Real: ${fmtDate(t.fecha_real_fin)}`}>{ext.type === "late" ? "▶" : "✓"}</div> : null; })()}
+                          </>
+                        ) : <div style={{ fontSize: 10, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>}
                       </div>
                     </div>
                   );
@@ -2403,6 +2684,8 @@ function PageDetalle({ proyectoId, onBack, notify }) {
               {[["var(--danger)", "Camino crítico"], ["var(--blue)", "En fecha"], ["var(--accent2)", "Completada"], ["var(--warn)", "Atrasada"]].map(([color, label]) => (
                 <div key={label} className="flex-gap"><div style={{ width: 10, height: 10, borderRadius: 2, background: color }} /><span style={{ fontSize: 9, color: "var(--muted)" }}>{label}</span></div>
               ))}
+              <div className="flex-gap"><div style={{ width: 18, height: 10, borderRadius: 2, background: "repeating-linear-gradient(90deg,rgba(176,125,10,0.7) 0px,rgba(176,125,10,0.7) 4px,transparent 4px,transparent 8px)", border: "1px dashed var(--warn)" }} /><span style={{ fontSize: 9, color: "var(--muted)" }}>Demora real</span></div>
+              <div className="flex-gap"><div style={{ width: 18, height: 10, borderRadius: 2, background: "repeating-linear-gradient(90deg,rgba(30,126,74,0.7) 0px,rgba(30,126,74,0.7) 4px,transparent 4px,transparent 8px)", border: "1px dashed var(--accent2)" }} /><span style={{ fontSize: 9, color: "var(--muted)" }}>Adelanto real</span></div>
             </div>
           </div>
         </FullscreenWrapper>
@@ -2543,10 +2826,12 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                       <div className="gc-sub">{t.owner ? `🎯 ${t.owner}` : t.responsable || "—"} · {t.duracion_dias}d · {t.porcentaje_avance || 0}%</div>
                     </div>
                     <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}` }}>
-                      {barStyle
-                        ? <div className={`bar ${getBarClass(t)}`} style={barStyle}>{t.nombre}</div>
-                        : <div style={{ fontSize: 10, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>
-                      }
+                      {barStyle ? (
+                        <>
+                          <div className={`bar ${getBarClass(t)}`} style={barStyle}>{t.nombre}</div>
+                          {(() => { const ext = getRealExtStyle(t); return ext ? <div className={ext.type === "late" ? "bar-real-ext" : "bar-real-before"} style={{ left: ext.left, width: ext.width }} title={`Real: ${fmtDate(t.fecha_real_fin)}`}>{ext.type === "late" ? "▶" : "✓"}</div> : null; })()}
+                        </>
+                      ) : <div style={{ fontSize: 10, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>}
                     </div>
                   </div>
                 );
