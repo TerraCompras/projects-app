@@ -128,22 +128,26 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 .gantt-row:hover{background:var(--surface2)}
 .gh-cell{padding:7px 10px;font-size:9px;font-weight:600;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;border-right:1px solid var(--border);text-align:center}
 .gh-cell:last-child{border-right:none}
-.gc-label{padding:8px 12px;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;min-height:44px;overflow:hidden;word-break:break-word}
+.gc-label{padding:8px 12px;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;min-height:52px;overflow:hidden;word-break:break-word}
 .gc-name{font-size:11px;font-weight:600;color:var(--navy);overflow:hidden;text-overflow:ellipsis;white-space:normal;word-break:break-word;line-height:1.3}
 .gc-sub{font-size:9px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.gc-bars{position:relative;display:flex;align-items:center;min-height:44px}
-.bar{position:absolute;height:18px;border-radius:3px;display:flex;align-items:center;padding:0 6px;font-size:9px;color:#fff;white-space:nowrap;overflow:hidden;font-weight:600}
-.bar.normal{background:var(--blue)}
+/* gc-bars tiene más altura para alojar la línea exterior debajo de la barra */
+.gc-bars{position:relative;display:flex;align-items:center;min-height:52px}
+.bar{position:absolute;height:18px;border-radius:3px;display:flex;align-items:center;padding:0 6px;font-size:9px;color:#fff;white-space:nowrap;overflow:hidden;font-weight:600;top:12px}
+.bar.normal{background:#9EB3C8}
 .bar.critical{background:var(--danger)}
-.bar.done{background:var(--accent2)}
-.bar.late{background:var(--warn)}
-/* Barra de extensión real (punteada) — se superpone a la derecha de la barra comprometida */
-.bar-real-ext{position:absolute;height:18px;border-radius:0 3px 3px 0;display:flex;align-items:center;padding:0 5px;font-size:8px;color:#fff;white-space:nowrap;overflow:hidden;font-weight:700;opacity:0.85;
-  background:repeating-linear-gradient(90deg,rgba(255,255,255,0.25) 0px,rgba(255,255,255,0.25) 4px,transparent 4px,transparent 8px),var(--warn);
-  border:1px dashed rgba(255,255,255,0.5);box-sizing:border-box}
-.bar-real-before{position:absolute;height:18px;border-radius:0 3px 3px 0;display:flex;align-items:center;padding:0 5px;font-size:8px;color:#fff;white-space:nowrap;overflow:hidden;font-weight:700;opacity:0.85;
-  background:repeating-linear-gradient(90deg,rgba(255,255,255,0.25) 0px,rgba(255,255,255,0.25) 4px,transparent 4px,transparent 8px),var(--accent2);
-  border:1px dashed rgba(255,255,255,0.5);box-sizing:border-box}
+.bar.done{background:#9EB3C8;outline:2px solid var(--accent2);outline-offset:-1px}
+.bar.late{background:#9EB3C8}
+/* Línea exterior de fecha real — debajo de la barra, fuera de ella */
+.bar-underline{position:absolute;height:2.5px;border-radius:2px;top:34px}
+.bar-underline.late{background:#E24B4A}
+.bar-underline.early{background:#4A9C5D}
+/* Tick perpendicular simétrico en el día real */
+.bar-tick{position:absolute;width:2px;border-radius:1px;top:29px;height:12px}
+.bar-tick.late{background:#E24B4A}
+.bar-tick.early{background:#4A9C5D}
+/* Label fecha real — siempre fuera de la barra */
+.bar-real-label{position:absolute;font-size:8px;font-weight:600;white-space:nowrap;top:10px;font-family:var(--mono)}
 .cc-badge{display:inline-block;font-size:7px;background:#FEE2E2;color:#991B1B;border:1px solid #FECACA;border-radius:3px;padding:1px 4px;margin-left:4px;font-family:var(--mono);font-weight:700}
 .tarea-row{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);padding:14px 16px;margin-bottom:8px;cursor:pointer;transition:all .15s}
 .tarea-row:hover{border-color:var(--blue)}
@@ -2157,20 +2161,22 @@ function PageDetalle({ proyectoId, onBack, notify }) {
     return { left: `${left}%`, width: `${width}%` };
   };
 
-  // Barra de extensión real: si fecha_real_fin > fecha_fin → extensión roja punteada
-  // Si fecha_real_fin < fecha_fin → extensión verde punteada (adelanto)
-  const getRealExtStyle = (t) => {
-    if (!t.fecha_real_fin || !t.fecha_fin || !minFecha) return null;
-    const comprLeft  = (diffDays(minFecha, t.fecha_inicio) / totalDias) * 100;
-    const comprRight = comprLeft + Math.max((diffDays(t.fecha_inicio, t.fecha_fin) / totalDias) * 100, 2);
-    const realRight  = comprLeft + Math.max((diffDays(t.fecha_inicio, t.fecha_real_fin) / totalDias) * 100, 2);
-    if (Math.abs(realRight - comprRight) < 0.5) return null; // igual, sin desvío visible
-    if (realRight > comprRight) {
-      // Demora: punteado naranja desde fecha_fin comprometida hasta fecha_real_fin
-      return { type: "late", left: `${comprRight}%`, width: `${realRight - comprRight}%` };
+  // Datos para la línea exterior (underline) + tick perpendicular en día real
+  // Retorna: { type: "late"|"early", lineLeft, lineWidth, tickLeft, label }
+  const getRealExt = (t, barStyleObj) => {
+    if (!t.fecha_real_fin || !t.fecha_fin || !minFecha || !barStyleObj) return null;
+    const comprLeftPct  = (diffDays(minFecha, t.fecha_inicio) / totalDias) * 100;
+    const comprRightPct = comprLeftPct + Math.max((diffDays(t.fecha_inicio, t.fecha_fin) / totalDias) * 100, 2);
+    const realRightPct  = comprLeftPct + Math.max((diffDays(t.fecha_inicio, t.fecha_real_fin) / totalDias) * 100, 2);
+    if (Math.abs(realRightPct - comprRightPct) < 0.5) return null;
+    const diffD = diffDays(t.fecha_fin, t.fecha_real_fin); // negativo = adelanto
+    const label = diffD > 0 ? `+${diffD}d` : `${diffD}d`;
+    if (realRightPct > comprRightPct) {
+      // Atrasado: línea desde inicio barra hasta día real (toda la extensión)
+      return { type: "late", lineLeft: `${comprLeftPct}%`, lineWidth: `${realRightPct - comprLeftPct}%`, tickLeft: `${realRightPct}%`, label };
     } else {
-      // Adelanto: punteado verde desde fecha_real_fin hasta fecha_fin comprometida
-      return { type: "early", left: `${realRight}%`, width: `${comprRight - realRight}%` };
+      // Adelantado: línea desde inicio hasta día real (más corta que la barra)
+      return { type: "early", lineLeft: `${comprLeftPct}%`, lineWidth: `${realRightPct - comprLeftPct}%`, tickLeft: `${realRightPct}%`, label };
     }
   };
 
@@ -2191,7 +2197,10 @@ function PageDetalle({ proyectoId, onBack, notify }) {
     }
   }
 
-  const cols = `220px ${meses.length > 0 ? `repeat(${meses.length}, 1fr)` : "1fr"}`;
+  // Columna de tareas 220px + columnas de meses con mínimo de 900px en el área de barras
+  // para que los labels de fecha real (que quedan fuera de la barra) no queden cortados
+  const barsMinWidth = Math.max(meses.length * 80, 900);
+  const cols = `220px ${meses.length > 0 ? `repeat(${meses.length}, minmax(${Math.round(barsMinWidth / meses.length)}px, 1fr))` : "minmax(900px,1fr)"}`;
 
   const handleEliminarTarea = async (id) => {
     try {
@@ -2448,8 +2457,24 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                       <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}`, background: "#fff" }}>
                         {barStyle ? (
                           <>
-                            <div className={`bar ${getBarClass(t)}`} style={barStyle}>{t.nombre}</div>
-                            {(() => { const ext = getRealExtStyle(t); return ext ? <div className={ext.type === "late" ? "bar-real-ext" : "bar-real-before"} style={{ left: ext.left, width: ext.width }} title={ext.type === "late" ? `Real: ${fmtDate(t.fecha_real_fin)} (demora)` : `Real: ${fmtDate(t.fecha_real_fin)} (adelanto)`}>{ext.type === "late" ? "▶" : "✓"}</div> : null; })()}
+                            <div className={`bar ${getBarClass(t)}`} style={barStyle} />
+                            {(() => {
+                              const ext = getRealExt(t, barStyle);
+                              if (!ext) return null;
+                              const isLate = ext.type === "late";
+                              return (
+                                <>
+                                  {/* Línea exterior debajo de la barra */}
+                                  <div className={`bar-underline ${ext.type}`} style={{ left: ext.lineLeft, width: ext.lineWidth }} />
+                                  {/* Tick perpendicular en día real */}
+                                  <div className={`bar-tick ${ext.type}`} style={{ left: ext.tickLeft, marginLeft: -1 }} />
+                                  {/* Label fuera de la barra, a la derecha del tick */}
+                                  <div className="bar-real-label" style={{ left: `calc(${ext.tickLeft} + 5px)`, color: isLate ? "#C0392B" : "#1E7A4A" }}>
+                                    {ext.label}
+                                  </div>
+                                </>
+                              );
+                            })()}
                           </>
                         ) : <div style={{ fontSize: 10, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>}
                       </div>
@@ -2459,16 +2484,6 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                       const sLeft  = s.fecha_inicio && minFecha ? (diffDays(minFecha, s.fecha_inicio) / totalDias) * 100 : null;
                       const sWidth = s.fecha_inicio && s.fecha_fin ? Math.max((diffDays(s.fecha_inicio, s.fecha_fin) / totalDias) * 100, 1) : null;
                       const sStyle = sLeft !== null && sWidth !== null ? { left: `${sLeft}%`, width: `${sWidth}%` } : null;
-                      // Extensión real subtarea
-                      const sRealExt = (() => {
-                        if (!s.fecha_real_fin || !s.fecha_fin || !minFecha || sLeft === null) return null;
-                        const sComprRight = sLeft + Math.max((diffDays(s.fecha_inicio, s.fecha_fin) / totalDias) * 100, 1);
-                        const sRealRight  = sLeft + Math.max((diffDays(s.fecha_inicio, s.fecha_real_fin) / totalDias) * 100, 1);
-                        if (Math.abs(sRealRight - sComprRight) < 0.5) return null;
-                        return sRealRight > sComprRight
-                          ? { type: "late",  left: `${sComprRight}%`, width: `${sRealRight - sComprRight}%` }
-                          : { type: "early", left: `${sRealRight}%`,  width: `${sComprRight - sRealRight}%` };
-                      })();
                       return (
                         <div
                           key={s.id}
@@ -2483,8 +2498,34 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                           <div className="gc-bars" style={{ gridColumn: `2 / ${meses.length + 2}` }}>
                             {sStyle ? (
                               <>
-                                <div style={{ ...sStyle, position: "absolute", height: 10, borderRadius: 3, background: s.porcentaje_avance >= 100 ? "var(--accent2)" : "var(--mid)", opacity: 0.8 }} />
-                                {sRealExt && <div className={sRealExt.type === "late" ? "bar-real-ext" : "bar-real-before"} style={{ ...sRealExt, height: 10, top: "50%", transform: "translateY(-50%)" }} title={`Real: ${fmtDate(s.fecha_real_fin)}`} />}
+                                <div style={{
+                                  ...sStyle, position: "absolute", height: 10, borderRadius: 3,
+                                  background: s.porcentaje_avance >= 100 ? "#9EB3C8" : "#B8C8D8",
+                                  top: 14,
+                                  outline: s.porcentaje_avance >= 100 ? "2px solid var(--accent2)" : "none",
+                                  outlineOffset: -1,
+                                }} />
+                                {(() => {
+                                  if (!s.fecha_real_fin || !s.fecha_fin || !minFecha || sLeft === null) return null;
+                                  const sComprRightPct = sLeft + Math.max((diffDays(s.fecha_inicio, s.fecha_fin) / totalDias) * 100, 1);
+                                  const sRealRightPct  = sLeft + Math.max((diffDays(s.fecha_inicio, s.fecha_real_fin) / totalDias) * 100, 1);
+                                  if (Math.abs(sRealRightPct - sComprRightPct) < 0.5) return null;
+                                  const isLate = sRealRightPct > sComprRightPct;
+                                  const lineLeft  = `${sLeft}%`;
+                                  const lineWidth = isLate ? `${sRealRightPct - sLeft}%` : `${sRealRightPct - sLeft}%`;
+                                  const tickLeft  = `${sRealRightPct}%`;
+                                  const diffD     = diffDays(s.fecha_fin, s.fecha_real_fin);
+                                  const label     = diffD > 0 ? `+${diffD}d` : `${diffD}d`;
+                                  const color     = isLate ? "#C0392B" : "#1E7A4A";
+                                  const lineColor = isLate ? "#E24B4A" : "#4A9C5D";
+                                  return (
+                                    <>
+                                      <div style={{ position:"absolute", left: lineLeft, width: lineWidth, height: 2, background: lineColor, top: 28, borderRadius: 2 }} />
+                                      <div style={{ position:"absolute", left: tickLeft, marginLeft:-1, width: 2, height: 10, background: lineColor, top: 23, borderRadius: 1 }} />
+                                      <div style={{ position:"absolute", left:`calc(${tickLeft} + 4px)`, top: 8, fontSize: 7, fontWeight: 600, color, fontFamily:"var(--mono)", whiteSpace:"nowrap" }}>{label}</div>
+                                    </>
+                                  );
+                                })()}
                               </>
                             ) : <div style={{ fontSize: 9, color: "var(--muted2)", padding: "0 12px" }}>Sin fechas</div>}
                           </div>
@@ -2496,11 +2537,30 @@ function PageDetalle({ proyectoId, onBack, notify }) {
               })
           }
           <div style={{ padding: "10px 16px", display: "flex", gap: 14, borderTop: "1px solid var(--border)", background: "var(--surface2)", flexWrap: "wrap", alignItems: "center" }}>
-            {[["var(--danger)", "Camino crítico"], ["var(--blue)", "En fecha"], ["var(--accent2)", "Completada"], ["var(--warn)", "Atrasada"]].map(([color, label]) => (
+            {[["var(--danger)", "Camino crítico"], ["#9EB3C8", "En fecha / En curso"]].map(([color, label]) => (
               <div key={label} className="flex-gap"><div style={{ width: 10, height: 10, borderRadius: 2, background: color }} /><span style={{ fontSize: 9, color: "var(--muted)" }}>{label}</span></div>
             ))}
-            <div className="flex-gap"><div style={{ width: 18, height: 10, borderRadius: 2, background: "repeating-linear-gradient(90deg,rgba(176,125,10,0.7) 0px,rgba(176,125,10,0.7) 4px,transparent 4px,transparent 8px)", border: "1px dashed var(--warn)" }} /><span style={{ fontSize: 9, color: "var(--muted)" }}>Demora real</span></div>
-            <div className="flex-gap"><div style={{ width: 18, height: 10, borderRadius: 2, background: "repeating-linear-gradient(90deg,rgba(30,126,74,0.7) 0px,rgba(30,126,74,0.7) 4px,transparent 4px,transparent 8px)", border: "1px dashed var(--accent2)" }} /><span style={{ fontSize: 9, color: "var(--muted)" }}>Adelanto real</span></div>
+            {/* Completada: barra gris con contorno verde */}
+            <div className="flex-gap">
+              <div style={{ width: 10, height: 10, borderRadius: 2, background: "#9EB3C8", outline: "2px solid var(--accent2)", outlineOffset: -1 }} />
+              <span style={{ fontSize: 9, color: "var(--muted)" }}>Completada</span>
+            </div>
+            {/* Atrasado real: línea + tick rojo */}
+            <div className="flex-gap" style={{ alignItems: "center", gap: 4 }}>
+              <div style={{ position: "relative", width: 22, height: 10 }}>
+                <div style={{ position: "absolute", left: 0, width: 22, height: 2, background: "#E24B4A", borderRadius: 2, top: 6 }} />
+                <div style={{ position: "absolute", left: 19, width: 2, height: 8, background: "#E24B4A", borderRadius: 1, top: 1 }} />
+              </div>
+              <span style={{ fontSize: 9, color: "var(--muted)" }}>Atrasado real</span>
+            </div>
+            {/* Adelantado real: línea + tick verde */}
+            <div className="flex-gap" style={{ alignItems: "center", gap: 4 }}>
+              <div style={{ position: "relative", width: 22, height: 10 }}>
+                <div style={{ position: "absolute", left: 0, width: 14, height: 2, background: "#4A9C5D", borderRadius: 2, top: 6 }} />
+                <div style={{ position: "absolute", left: 11, width: 2, height: 8, background: "#4A9C5D", borderRadius: 1, top: 1 }} />
+              </div>
+              <span style={{ fontSize: 9, color: "var(--muted)" }}>Adelantado real</span>
+            </div>
             {tareasOrden && (
               <button className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={() => setTareasOrden(null)}>↺ Restablecer orden</button>
             )}
