@@ -136,7 +136,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 .bar{position:absolute;height:18px;border-radius:3px;display:flex;align-items:center;padding:0 6px;font-size:9px;color:#fff;white-space:nowrap;overflow:hidden;font-weight:600;top:12px}
 .bar.normal{background:#9EB3C8}
 .bar.critical{background:var(--danger)}
-.bar.done{background:repeating-linear-gradient(45deg,rgba(30,122,74,0.18) 0px,rgba(30,122,74,0.18) 3px,#9EB3C8 3px,#9EB3C8 8px);border:1px solid rgba(30,122,74,0.45);box-sizing:border-box}
+.bar.done{background:repeating-linear-gradient(45deg,rgba(30,122,74,0.55) 0px,rgba(30,122,74,0.55) 3px,#9EB3C8 3px,#9EB3C8 7px);border:1px solid rgba(30,122,74,0.7);box-sizing:border-box}
 .bar.late{background:#9EB3C8}
 /* Línea exterior de fecha real — debajo de la barra, fuera de ella */
 .bar-underline{position:absolute;height:2.5px;border-radius:2px;top:34px}
@@ -2167,19 +2167,28 @@ function PageDetalle({ proyectoId, onBack, notify }) {
   const getLineaProgreso = (t, barStyleObj) => {
     if (!t.fecha_inicio || !t.fecha_fin || !minFecha || !barStyleObj) return null;
     const td = today();
-    const comprLeftPct = (diffDays(minFecha, t.fecha_inicio) / totalDias) * 100;
+    const comprLeftPct  = (diffDays(minFecha, t.fecha_inicio) / totalDias) * 100;
+    const comprRightPct = comprLeftPct + Math.max((diffDays(t.fecha_inicio, t.fecha_fin) / totalDias) * 100, 2);
     if (t.fecha_real_fin) {
       const realRightPct = comprLeftPct + Math.max((diffDays(t.fecha_inicio, t.fecha_real_fin) / totalDias) * 100, 2);
       const isClosedLate = t.fecha_real_fin > t.fecha_fin;
       const color = isClosedLate ? "#E24B4A" : "#4A9C5D";
       const diffD = diffDays(t.fecha_fin, t.fecha_real_fin);
       const label = isClosedLate ? `+${diffD}d` : (diffD < 0 ? `${diffD}d` : "en plazo");
-      return { lineLeft: `${comprLeftPct}%`, lineWidth: `${realRightPct - comprLeftPct}%`, lineColor: color, tickLeft: `${realRightPct}%`, showTick: true, label, labelColor: isClosedLate ? "#C0392B" : "#1E7A4A" };
+      // Label siempre a la derecha del fin de barra planeada para evitar que quede dentro
+      const labelAnchorPct = Math.max(realRightPct, comprRightPct);
+      return {
+        lineLeft: `${comprLeftPct}%`, lineWidth: `${realRightPct - comprLeftPct}%`,
+        lineColor: color, tickColor: color,
+        tickLeft: `${realRightPct}%`,
+        labelLeft: `calc(${labelAnchorPct}% + 5px)`,
+        showTick: true, label, labelColor: isClosedLate ? "#C0392B" : "#1E7A4A",
+      };
     } else {
       if (td < t.fecha_inicio) return null;
       const lineEndPct = comprLeftPct + Math.max((diffDays(t.fecha_inicio, td) / totalDias) * 100, 0);
       const color = td > t.fecha_fin ? "#E24B4A" : "#888780";
-      return { lineLeft: `${comprLeftPct}%`, lineWidth: `${lineEndPct - comprLeftPct}%`, lineColor: color, showTick: false, tickLeft: null, label: null };
+      return { lineLeft: `${comprLeftPct}%`, lineWidth: `${lineEndPct - comprLeftPct}%`, lineColor: color, tickColor: color, showTick: false, tickLeft: null, label: null };
     }
   };
 
@@ -2469,7 +2478,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                                   <div className="bar-underline" style={{ left: lp.lineLeft, width: lp.lineWidth, background: lp.lineColor }} />
                                   {lp.showTick && <>
                                     <div className="bar-tick" style={{ left: lp.tickLeft, marginLeft: -1, background: lp.tickColor }} />
-                                    <div className="bar-real-label" style={{ left: `calc(${lp.tickLeft} + 5px)`, color: lp.labelColor }}>{lp.label}</div>
+                                    <div className="bar-real-label" style={{ left: lp.labelLeft, color: lp.labelColor }}>{lp.label}</div>
                                   </>}
                                 </>
                               );
@@ -2500,9 +2509,9 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                                 <div style={{
                                   ...sStyle, position: "absolute", height: 10, borderRadius: 3,
                                   background: s.porcentaje_avance >= 100
-                                    ? "repeating-linear-gradient(45deg,rgba(30,122,74,0.18) 0px,rgba(30,122,74,0.18) 2px,#9EB3C8 2px,#9EB3C8 6px)"
+                                    ? "repeating-linear-gradient(45deg,rgba(30,122,74,0.55) 0px,rgba(30,122,74,0.55) 2px,#9EB3C8 2px,#9EB3C8 6px)"
                                     : "#B8C8D8",
-                                  border: s.porcentaje_avance >= 100 ? "1px solid rgba(30,122,74,0.45)" : "none",
+                                  border: s.porcentaje_avance >= 100 ? "1px solid rgba(30,122,74,0.7)" : "none",
                                 }} />
                                 {(() => {
                                   if (!s.fecha_inicio || !s.fecha_fin || !minFecha || sLeft === null) return null;
@@ -2540,7 +2549,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
               <div key={label} className="flex-gap"><div style={{ width: 10, height: 10, borderRadius: 2, background: color }} /><span style={{ fontSize: 9, color: "var(--muted)" }}>{label}</span></div>
             ))}
             <div className="flex-gap">
-              <div style={{ width: 10, height: 10, borderRadius: 2, background: "repeating-linear-gradient(45deg,rgba(30,122,74,0.18) 0px,rgba(30,122,74,0.18) 3px,#9EB3C8 3px,#9EB3C8 8px)", border: "1px solid rgba(30,122,74,0.45)" }} />
+              <div style={{ width: 10, height: 10, borderRadius: 2, background: "repeating-linear-gradient(45deg,rgba(30,122,74,0.55) 0px,rgba(30,122,74,0.55) 3px,#9EB3C8 3px,#9EB3C8 8px)", border: "1px solid rgba(30,122,74,0.7)" }} />
               <span style={{ fontSize: 9, color: "var(--muted)" }}>Completada</span>
             </div>
             <div className="flex-gap" style={{ alignItems: "center", gap: 4 }}>
@@ -2744,7 +2753,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                                 <div className="bar-underline" style={{ left: lp.lineLeft, width: lp.lineWidth, background: lp.lineColor }} />
                                 {lp.showTick && <>
                                   <div className="bar-tick" style={{ left: lp.tickLeft, marginLeft: -1, background: lp.tickColor }} />
-                                  <div className="bar-real-label" style={{ left: `calc(${lp.tickLeft} + 5px)`, color: lp.labelColor }}>{lp.label}</div>
+                                  <div className="bar-real-label" style={{ left: lp.labelLeft, color: lp.labelColor }}>{lp.label}</div>
                                 </>}
                               </>);
                             })()}
@@ -2760,7 +2769,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                 <div key={label} className="flex-gap"><div style={{ width: 10, height: 10, borderRadius: 2, background: color }} /><span style={{ fontSize: 9, color: "var(--muted)" }}>{label}</span></div>
               ))}
               <div className="flex-gap">
-                <div style={{ width: 10, height: 10, borderRadius: 2, background: "repeating-linear-gradient(45deg,rgba(30,122,74,0.18) 0px,rgba(30,122,74,0.18) 3px,#9EB3C8 3px,#9EB3C8 8px)", border: "1px solid rgba(30,122,74,0.45)" }} />
+                <div style={{ width: 10, height: 10, borderRadius: 2, background: "repeating-linear-gradient(45deg,rgba(30,122,74,0.55) 0px,rgba(30,122,74,0.55) 3px,#9EB3C8 3px,#9EB3C8 8px)", border: "1px solid rgba(30,122,74,0.7)" }} />
                 <span style={{ fontSize: 9, color: "var(--muted)" }}>Completada</span>
               </div>
               <div className="flex-gap" style={{ alignItems: "center", gap: 4 }}>
@@ -2935,7 +2944,7 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                               <div className="bar-underline" style={{ left: lp.lineLeft, width: lp.lineWidth, background: lp.lineColor }} />
                               {lp.showTick && <>
                                 <div className="bar-tick" style={{ left: lp.tickLeft, marginLeft: -1, background: lp.tickColor }} />
-                                <div className="bar-real-label" style={{ left: `calc(${lp.tickLeft} + 5px)`, color: lp.labelColor }}>{lp.label}</div>
+                                <div className="bar-real-label" style={{ left: lp.labelLeft, color: lp.labelColor }}>{lp.label}</div>
                               </>}
                             </>);
                           })()}
