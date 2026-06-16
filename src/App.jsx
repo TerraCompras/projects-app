@@ -121,10 +121,9 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14
 .recurso-tag{display:inline-flex;align-items:center;gap:5px;background:#DBEAFE;color:#1E40AF;border:1px solid #BFDBFE;border-radius:4px;padding:3px 8px;font-size:10px;font-family:var(--mono)}
 .recurso-tag button{background:none;border:none;cursor:pointer;color:#1E40AF;font-size:11px;padding:0;line-height:1;opacity:.6}
 .recurso-tag button:hover{opacity:1}
-.gantt-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden}
-.gantt-scroll{overflow-x:auto;overflow-y:visible;width:100%}
-.gantt-header{display:grid;border-bottom:2px solid var(--border);background:var(--surface2);min-width:max-content;width:100%}
-.gantt-row{display:grid;border-bottom:1px solid var(--border);min-width:max-content;width:100%}
+.gantt-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--r2);overflow-x:auto;overflow-y:visible}
+.gantt-header{display:grid;border-bottom:2px solid var(--border);background:var(--surface2);position:sticky;top:0;z-index:10}
+.gantt-row{display:grid;border-bottom:1px solid var(--border);min-width:100%}
 .gantt-row:last-child{border-bottom:none}
 .gantt-row:hover{background:var(--surface2)}
 .gh-cell{padding:7px 10px;font-size:9px;font-weight:600;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;border-right:1px solid var(--border);text-align:center}
@@ -2454,11 +2453,11 @@ function PageDetalle({ proyectoId, onBack, notify }) {
 
       {tab === "gantt" && (
         <div className="gantt-wrap">
-          <div className="gantt-scroll">
           <div className="gantt-header" style={{ gridTemplateColumns: cols }}>
             <div className="gh-cell" style={{ textAlign: "center", borderRight: "1px solid var(--border)" }}>Tarea</div>
             {meses.map((m, i) => <div key={i} className="gh-cell">{m}</div>)}
             {meses.length === 0 && <div className="gh-cell">Línea de tiempo</div>}
+          </div>
           {tareasOrdenadas.length === 0
             ? <div className="empty-state">Sin tareas — usá "+ Nueva tarea" para empezar</div>
             : tareasOrdenadas.map((t, i) => {
@@ -2610,8 +2609,6 @@ function PageDetalle({ proyectoId, onBack, notify }) {
               <button className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={() => setTareasOrden(null)}>↺ Restablecer orden</button>
             )}
           </div>
-          </div>
-          </div>
         </div>
       )}
 
@@ -2756,11 +2753,11 @@ function PageDetalle({ proyectoId, onBack, notify }) {
       {fullscreen === "gantt" && (
         <FullscreenWrapper title={`Gantt — ${proyecto.nombre}`} onClose={() => setFullscreen(null)}>
           <div className="gantt-wrap">
-            <div className="gantt-scroll">
             <div className="gantt-header" style={{ gridTemplateColumns: cols }}>
               <div className="gh-cell" style={{ textAlign: "center", borderRight: "1px solid var(--border)" }}>Tarea</div>
               {meses.map((m, i) => <div key={i} className="gh-cell">{m}</div>)}
               {meses.length === 0 && <div className="gh-cell">Línea de tiempo</div>}
+            </div>
             {tareas.length === 0
               ? <div className="empty-state">Sin tareas</div>
               : tareas.map(t => {
@@ -2828,8 +2825,6 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                 <div style={{ width: 22, height: 2, background: "#E24B4A", borderRadius: 2 }} />
                 <span style={{ fontSize: 9, color: "var(--muted)" }}>Progreso atrasado</span>
               </div>
-            </div>
-            </div>
             </div>
           </div>
         </FullscreenWrapper>
@@ -2951,11 +2946,11 @@ function PageDetalle({ proyectoId, onBack, notify }) {
           <div className="card" style={{ padding: 0, overflow: "hidden" }}>
             <div style={{ padding: "12px 16px", background: "var(--surface2)", borderBottom: "1px solid var(--border)", fontSize: 11, fontWeight: 700, color: "var(--muted)", letterSpacing: 1, textTransform: "uppercase" }}>Gantt</div>
             <div className="gantt-wrap">
-              <div className="gantt-scroll">
               <div className="gantt-header" style={{ gridTemplateColumns: cols }}>
                 <div className="gh-cell" style={{ textAlign: "center", borderRight: "1px solid var(--border)" }}>Tarea</div>
                 {meses.map((m, i) => <div key={i} className="gh-cell">{m}</div>)}
                 {meses.length === 0 && <div className="gh-cell">Línea de tiempo</div>}
+              </div>
               {tareas.map(t => {
                 const barStyle = getBarStyle(t);
                 return (
@@ -2990,8 +2985,6 @@ function PageDetalle({ proyectoId, onBack, notify }) {
                   </div>
                 );
               })}
-              </div>
-              </div>
             </div>
           </div>
         </FullscreenWrapper>
