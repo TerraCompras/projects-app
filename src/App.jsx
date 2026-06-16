@@ -422,6 +422,11 @@ const api = {
       "porcentaje_avance", "status", "notas", "dias_habiles",
       "fecha_real_fin", "razon_desvio",
     ];
+    const sanitized = {};
+    camposPermitidos.forEach(k => { if (tarea[k] !== undefined) sanitized[k] = tarea[k]; });
+    sanitized.duracion_dias = parseInt(sanitized.duracion_dias) || 1;
+    sanitized.porcentaje_avance = parseInt(sanitized.porcentaje_avance) || 0;
+    const { data, error } = await supabase.from("proyecto_tareas").insert([sanitized]).select().maybeSingle();
     if (error) throw error;
     return data;
   },
@@ -1061,6 +1066,7 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar, no
 
   // ── Subtareas ──
   const blankSubForm = () => ({ descripcion: "", fecha_inicio: form.fecha_inicio || "", fecha_fin: form.fecha_fin || "", porcentaje_avance: 0, responsable: "", fecha_real_fin: "", razon_desvio: "" });
+  // fecha_real_fin y razon_desvio se incluyen en el objeto pero solo se muestran en edición (ver UI abajo)
 
   const handleGuardarSubtarea = async () => {
     if (!subForm.descripcion.trim()) return alert("La descripción es obligatoria");
@@ -1217,12 +1223,15 @@ function TareaModal({ tarea, proyectoId, tareas, onClose, onSave, onEliminar, no
                           {perfiles.map(p => <option key={p.id} value={p.nombre}>{p.nombre}</option>)}
                         </select>
                       </FG>
-                      <FG label="Fecha real de fin" hint="Cuándo se completó">
-                        <input type="date" value={subForm.fecha_real_fin || ""} onChange={e => setSub("fecha_real_fin", e.target.value)} />
-                      </FG>
-                      <FG label="Razón del desvío" hint="Opcional">
-                        <input value={subForm.razon_desvio || ""} onChange={e => setSub("razon_desvio", e.target.value)} placeholder="Ej: Material llegó tarde..." />
-                      </FG>
+                      {/* fecha_real_fin y razon_desvio solo en edición — al crear no tiene sentido completarlos */}
+                      {editSubtareaId && <>
+                        <FG label="Fecha real de fin" hint="Cuándo se completó">
+                          <input type="date" value={subForm.fecha_real_fin || ""} onChange={e => setSub("fecha_real_fin", e.target.value)} />
+                        </FG>
+                        <FG label="Razón del desvío" hint="Opcional">
+                          <input value={subForm.razon_desvio || ""} onChange={e => setSub("razon_desvio", e.target.value)} placeholder="Ej: Material llegó tarde..." />
+                        </FG>
+                      </>}
                     </div>
                     {form.fecha_inicio && form.fecha_fin && (
                       <div style={{ fontSize: 10, color: "var(--muted2)", marginBottom: 8 }}>
