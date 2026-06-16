@@ -526,12 +526,34 @@ const api = {
     return data || [];
   },
   async crearSubtarea(subtarea) {
-    const { data, error } = await supabase.from("proyecto_subtareas").insert([subtarea]).select().maybeSingle();
+    const camposPermitidos = [
+      "tarea_id", "proyecto_id", "descripcion", "responsable",
+      "fecha_inicio", "fecha_fin", "fecha_real_fin", "razon_desvio", "porcentaje_avance",
+    ];
+    const sanitized = {};
+    camposPermitidos.forEach(k => { if (subtarea[k] !== undefined) sanitized[k] = subtarea[k]; });
+    // Convertir strings vacíos en campos de fecha a null (Supabase no acepta "")
+    ["fecha_inicio", "fecha_fin", "fecha_real_fin"].forEach(k => {
+      if (sanitized[k] === "") sanitized[k] = null;
+    });
+    sanitized.porcentaje_avance = parseInt(sanitized.porcentaje_avance) || 0;
+    const { data, error } = await supabase.from("proyecto_subtareas").insert([sanitized]).select().maybeSingle();
     if (error) throw error;
     return data;
   },
   async actualizarSubtarea(id, cambios) {
-    const { data, error } = await supabase.from("proyecto_subtareas").update(cambios).eq("id", id).select().maybeSingle();
+    const camposPermitidos = [
+      "descripcion", "responsable",
+      "fecha_inicio", "fecha_fin", "fecha_real_fin", "razon_desvio", "porcentaje_avance",
+    ];
+    const sanitized = {};
+    camposPermitidos.forEach(k => { if (cambios[k] !== undefined) sanitized[k] = cambios[k]; });
+    // Convertir strings vacíos en campos de fecha a null (Supabase no acepta "")
+    ["fecha_inicio", "fecha_fin", "fecha_real_fin"].forEach(k => {
+      if (sanitized[k] === "") sanitized[k] = null;
+    });
+    sanitized.porcentaje_avance = parseInt(sanitized.porcentaje_avance) || 0;
+    const { data, error } = await supabase.from("proyecto_subtareas").update(sanitized).eq("id", id).select().maybeSingle();
     if (error) throw error;
     return data;
   },
