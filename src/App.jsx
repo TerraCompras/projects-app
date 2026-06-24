@@ -3091,15 +3091,15 @@ function LoginPage() {
             </div>
             <div className="login-left-divider" />
             <div className="login-left-company">
-              <img src="/PL.png" alt="Parana Logística" className="login-left-company-logo" />
-              <div className="login-left-company-name">Parana Logística | Projects</div>
+              <img src="/PL.png" alt="PL Offshore" className="login-left-company-logo" />
+              <div className="login-left-company-name">PL Offshore | Projects</div>
             </div>
             <div className="login-left-line" />
             <div className="login-left-sub">We Find the Way, or We Make One.</div>
           </div>
           <div className="login-right">
             <div className="login-card">
-              <div className="login-card-eyebrow">Parana Logística | Projects</div>
+              <div className="login-card-eyebrow">PL Offshore | Projects</div>
               <div className="login-card-title">Acceso al portal</div>
               <div className="login-card-sub">Solo personal autorizado</div>
               {error && <div className="login-error">{error}</div>}
@@ -3114,7 +3114,7 @@ function LoginPage() {
               <button className="login-btn" onClick={handleLogin} disabled={loading || !email || !pass}>
                 {loading ? "Ingresando..." : "Ingresar →"}
               </button>
-              <div className="login-footer">Parana Logística · Acceso restringido</div>
+              <div className="login-footer">PL Offshore · Acceso restringido</div>
               <div className="login-back" onClick={() => window.location.href = PORTAL_URL}>← Volver a Grupo PL</div>
             </div>
           </div>
@@ -3161,7 +3161,7 @@ function ProjectsApp() {
         <nav className="sidebar">
           <div className="sidebar-header">
             <div className="sidebar-logo-wrap">
-              <img src="/PL.png" alt="Parana Logística" className="sidebar-logo-img" onError={e => { e.currentTarget.style.display = "none"; }} />
+              <img src="/PL.png" alt="PL Offshore" className="sidebar-logo-img" onError={e => { e.currentTarget.style.display = "none"; }} />
               <div>
                 <div className="sidebar-logo-main">Projects</div>
                 <div className="sidebar-logo-sub">Terra Mare Group</div>
