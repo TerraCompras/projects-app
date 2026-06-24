@@ -1755,15 +1755,11 @@ function PageProyectos({ onSelectProyecto, notify, filtroEmpresaExterno = "", so
         <div className="stat"><div className="stat-label">Completados</div><div className="stat-value" style={{ color: "var(--muted)" }}>{proyectos.filter(p => p.status === "completado").length}</div></div>
       </div>
       <div className="filter-row">
-        <select className="filter-select" value={filtroEmpresa} onChange={e => setFiltroEmpresa(e.target.value)}>
-          <option value="">Todas las empresas</option>
-          {EMPRESAS.map(e => <option key={e}>{e}</option>)}
-        </select>
         <select className="filter-select" value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}>
           <option value="">Todos los estados</option>
           {Object.entries(STATUS_PROYECTO).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
-        {(filtroEmpresa || filtroStatus) && <button className="btn btn-ghost btn-sm" onClick={() => { setFiltroEmpresa(""); setFiltroStatus(""); }}>✕ Limpiar</button>}
+        {filtroStatus && <button className="btn btn-ghost btn-sm" onClick={() => { setFiltroStatus(""); }}>✕ Limpiar</button>}
         <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", fontSize: 11, color: "var(--muted)" }}>{filtrados.length} proyectos</span>
         <button className="btn btn-primary btn-sm" onClick={() => setModal(true)}>+ Nuevo proyecto</button>
       </div>
@@ -3129,7 +3125,6 @@ function ProjectsApp() {
   const [page, setPage]                         = useState("proyectos");
   const [proyectoSeleccionado, setProyecto]     = useState(null);
   const [notif, setNotif]                       = useState(null);
-  const [filtroSidebar, setFiltroSidebar]       = useState("");
 
   const notify = useCallback((text, type = "info") => {
     setNotif({ text, type });
@@ -3150,7 +3145,6 @@ function ProjectsApp() {
   );
 
   const navTo = (id) => { setPage(id); };
-  const navEmpresa = (e) => { setFiltroSidebar(filtroSidebar === e ? "" : e); setPage("proyectos"); };
 
   return (
     <>
@@ -3164,22 +3158,13 @@ function ProjectsApp() {
               <img src="/PL.png" alt="PL Offshore" className="sidebar-logo-img" onError={e => { e.currentTarget.style.display = "none"; }} />
               <div>
                 <div className="sidebar-logo-main">Projects</div>
-                <div className="sidebar-logo-sub">Terra Mare Group</div>
+                <div className="sidebar-logo-sub">PL Offshore</div>
               </div>
             </div>
           </div>
           <div className="nav-section">Vistas</div>
           <NI id="proyectos" icon="▦" label="Todos los proyectos" />
           <NI id="atrasados" icon="⚠" label="Atrasados" />
-          <div className="nav-section">Empresas</div>
-          {EMPRESAS.map(e => (
-            <div key={e}
-              className={`ni ${filtroSidebar === e ? "active" : ""}`}
-              onClick={() => navEmpresa(e)}>
-              <span className="ni-icon">·</span>
-              <span style={{ fontSize: 11 }}>{e}</span>
-            </div>
-          ))}
           <div style={{ flex: 1 }} />
           <div style={{ padding: "14px 18px", borderTop: "1px solid rgba(255,255,255,.1)" }}>
             <div className="ni back" onClick={() => window.location.href = PORTAL_URL}>
@@ -3203,7 +3188,7 @@ function ProjectsApp() {
               <PageProyectos
                 onSelectProyecto={p => { setProyecto(p); setPage("detalle"); }}
                 notify={notify}
-                filtroEmpresaExterno={filtroSidebar}
+                filtroEmpresaExterno="Parana Logistica"
                 soloAtrasados={page === "atrasados"}
               />
             )}
